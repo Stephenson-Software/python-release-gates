@@ -1,0 +1,120 @@
+name: Tests gate
+
+# The library's own test suite at the candidate commit, on every interpreter it supports,
+# installed as a consumer installs it. See gates/tests_gate.py for the assertions.
+#
+# Callable two ways with the same inputs: `workflow_dispatch` (a person or the release
+# automation dispatches it) and `workflow_call` (a library's own workflow reuses it). Both
+# record `result.json` as the `tests-<run id>` artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Library repository (owner/repo)"
+        required: true
+        type: string
+      sha:
+        description: "Candidate commit (full sha)"
+        required: true
+        type: string
+      package:
+        description: "Import name of the package (checked to import from the installed copy)"
+        required: false
+        type: string
+        default: ""
+      python_versions:
+        description: "Comma-separated interpreters to test on"
+        required: false
+        type: string
+        default: "3.12"
+      install_extras:
+        description: "Extras installed with the package (e.g. dev); empty for none"
+        required: false
+        type: string
+        default: "dev"
+      test_command:
+        description: "Command run in the checkout; a leading `python` means the gate's venv"
+        required: false
+        type: string
+        default: "python -m pytest -q"
+      expected_version:
+        description: "Version pyproject.toml and __version__ must declare (optional)"
+        required: false
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      repository: {required: true, type: string}
+      sha: {required: true, type: string}
+      package: {required: false, type: string, default: ""}
+      python_versions: {required: false, type: string, default: "3.12"}
+      install_extras: {required: false, type: string, default: "dev"}
+      test_command: {required: false, type: string, default: "python -m pytest -q"}
+      expected_version: {required: false, type: string, default: ""}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ inputs.repository }}-${{ inputs.sha }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: ${{ inputs.repository }} @ ${{ inputs.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout gates
+        uses: actions/checkout@v4
+
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.sha }}
+          path: work/src
+          persist-credentials: false
+
+      - name: Interpreter list
+        id: py
+        env:
+          VERSIONS: ${{ inputs.python_versions }}
+        run: |
+          {
+            echo "list<<EOF"
+            echo "$VERSIONS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$'
+            echo "3.12"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.py.outputs.list }}
+
+      - name: Run the tests gate
+        env:
+          REPOSITORY: ${{ inputs.repository }}
+          SHA: ${{ inputs.sha }}
+          PACKAGE: ${{ inputs.package }}
+          PYTHON_VERSIONS: ${{ inputs.python_versions }}
+          INSTALL_EXTRAS: ${{ inputs.install_extras }}
+          TEST_COMMAND: ${{ inputs.test_command }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          WORK: ${{ github.workspace }}/work
+          RESULT_PATH: ${{ github.workspace }}/work/result.json
+        run: python gates/tests_gate.py
+
+      - name: Summarize
+        if: always()
+        run: python gates/summarize.py work/result.json "Tests gate" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-${{ github.run_id }}
+          path: work/result.json
+          if-no-files-found: warn

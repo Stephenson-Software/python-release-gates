@@ -1,0 +1,91 @@
+name: Consumers gate
+
+# Every project that pins the library runs its own test suite on its current pin (the
+# control phase) and then on the candidate commit. A regression fails the gate; a consumer
+# already red on its current pin is reported as pre-existing. See gates/consumers_gate.py.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Library repository (owner/repo)"
+        required: true
+        type: string
+      sha:
+        description: "Candidate commit (full sha)"
+        required: true
+        type: string
+      consumers:
+        description: "One consumer per line (or comma-separated): `owner/repo [extra pip package …]`"
+        required: true
+        type: string
+      distribution:
+        description: "Distribution name the consumers' requirements use (default: the repository name)"
+        required: false
+        type: string
+        default: ""
+      python_version:
+        description: "Interpreter the consumers are tested on"
+        required: false
+        type: string
+        default: "3.12"
+      test_command:
+        description: "Command run in each consumer's checkout"
+        required: false
+        type: string
+        default: "python -m pytest -q"
+  workflow_call:
+    inputs:
+      repository: {required: true, type: string}
+      sha: {required: true, type: string}
+      consumers: {required: true, type: string}
+      distribution: {required: false, type: string, default: ""}
+      python_version: {required: false, type: string, default: "3.12"}
+      test_command: {required: false, type: string, default: "python -m pytest -q"}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consumers-${{ inputs.repository }}-${{ inputs.sha }}
+  cancel-in-progress: false
+
+jobs:
+  consumers:
+    name: ${{ inputs.repository }} @ ${{ inputs.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout gates
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: |
+            ${{ inputs.python_version }}
+            3.12
+
+      - name: Run the consumers gate
+        env:
+          REPOSITORY: ${{ inputs.repository }}
+          SHA: ${{ inputs.sha }}
+          CONSUMERS: ${{ inputs.consumers }}
+          DISTRIBUTION: ${{ inputs.distribution }}
+          PYTHON_VERSION: ${{ inputs.python_version }}
+          TEST_COMMAND: ${{ inputs.test_command }}
+          WORK: ${{ github.workspace }}/work
+          RESULT_PATH: ${{ github.workspace }}/work/result.json
+        run: python gates/consumers_gate.py
+
+      - name: Summarize
+        if: always()
+        run: python gates/summarize.py work/result.json "Consumers gate" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumers-${{ github.run_id }}
+          path: work/result.json
+          if-no-files-found: warn

@@ -1,0 +1,92 @@
+name: Save-compatibility gate
+
+# Saves the baseline release wrote, read by the candidate: the same view twice, every file
+# byte-identical afterwards, and a new save added beside the old ones without touching them.
+# A scenario script in scenarios/ drives the library's own save API. See gates/save_compat.py.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Library repository (owner/repo)"
+        required: true
+        type: string
+      sha:
+        description: "Candidate commit (full sha)"
+        required: true
+        type: string
+      baseline_ref:
+        description: "The release the saves are written with (a tag, e.g. v0.2.0)"
+        required: true
+        type: string
+      scenario:
+        description: "Scenario script, a path in this repository (e.g. scenarios/tak_slots.py)"
+        required: true
+        type: string
+      distribution:
+        description: "Distribution name (default: the repository name)"
+        required: false
+        type: string
+        default: ""
+      python_version:
+        description: "Interpreter both versions run on"
+        required: false
+        type: string
+        default: "3.12"
+  workflow_call:
+    inputs:
+      repository: {required: true, type: string}
+      sha: {required: true, type: string}
+      baseline_ref: {required: true, type: string}
+      scenario: {required: true, type: string}
+      distribution: {required: false, type: string, default: ""}
+      python_version: {required: false, type: string, default: "3.12"}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: save-compat-${{ inputs.repository }}-${{ inputs.sha }}-${{ inputs.baseline_ref }}
+  cancel-in-progress: false
+
+jobs:
+  save-compat:
+    name: ${{ inputs.repository }} @ ${{ inputs.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout gates
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: |
+            ${{ inputs.python_version }}
+            3.12
+
+      - name: Run the save-compatibility gate
+        env:
+          REPOSITORY: ${{ inputs.repository }}
+          SHA: ${{ inputs.sha }}
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          SCENARIO: ${{ inputs.scenario }}
+          DISTRIBUTION: ${{ inputs.distribution }}
+          PYTHON_VERSION: ${{ inputs.python_version }}
+          WORK: ${{ github.workspace }}/work
+          RESULT_PATH: ${{ github.workspace }}/work/result.json
+        run: python gates/save_compat.py
+
+      - name: Summarize
+        if: always()
+        run: python gates/summarize.py work/result.json "Save-compatibility gate" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: save-compat-${{ github.run_id }}
+          path: |
+            work/result.json
+            work/saves/
+          if-no-files-found: warn
