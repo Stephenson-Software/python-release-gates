@@ -15,7 +15,9 @@ and lays down the slot shapes that API has to keep telling apart:
   plus entries that are not slots at all: slot_0, slot_100, slot_x, a plain file named
   slot_6, notes.txt, and the schema directory
 
-Modes: `write DIR`, `read DIR` (prints one JSON line), `append DIR`.
+Modes: `write DIR`, `read DIR` (prints one JSON line), `append DIR`. `read` also works on a
+curated fixture directory: `TAK_PRIMARY_FILE` names its primary file (default `save.json`),
+and a slot is validated only when the directory carries `_schema/save.schema.json`.
 """
 
 import json
@@ -24,7 +26,7 @@ import sys
 
 from tak.saves import SaveFileManager, validateAgainstSchema
 
-PRIMARY = "save.json"
+PRIMARY = os.environ.get("TAK_PRIMARY_FILE") or "save.json"
 SCHEMA_DIR = "_schema"
 SCHEMA = {
     "type": "object",
@@ -75,6 +77,8 @@ def write(root):
 
 
 def validation(data, schema_path):
+    if not os.path.exists(schema_path):
+        return "no-schema"
     try:
         validateAgainstSchema(data, schema_path)
         return "valid"

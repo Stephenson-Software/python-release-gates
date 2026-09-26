@@ -33,6 +33,16 @@ on:
         required: false
         type: string
         default: "3.12"
+      fixture_url:
+        description: "Optional curated saves (.tar.gz) read by both versions; unreadable = failure"
+        required: false
+        type: string
+        default: ""
+      fixture_manifest_url:
+        description: "Optional manifest.json for the fixture (its `expected` counts are checked)"
+        required: false
+        type: string
+        default: ""
   workflow_call:
     inputs:
       repository: {required: true, type: string}
@@ -41,6 +51,8 @@ on:
       scenario: {required: true, type: string}
       distribution: {required: false, type: string, default: ""}
       python_version: {required: false, type: string, default: "3.12"}
+      fixture_url: {required: false, type: string, default: ""}
+      fixture_manifest_url: {required: false, type: string, default: ""}
 
 permissions:
   contents: read
@@ -73,6 +85,8 @@ jobs:
           SCENARIO: ${{ inputs.scenario }}
           DISTRIBUTION: ${{ inputs.distribution }}
           PYTHON_VERSION: ${{ inputs.python_version }}
+          FIXTURE_URL: ${{ inputs.fixture_url }}
+          FIXTURE_MANIFEST_URL: ${{ inputs.fixture_manifest_url }}
           WORK: ${{ github.workspace }}/work
           RESULT_PATH: ${{ github.workspace }}/work/result.json
         run: python gates/save_compat.py

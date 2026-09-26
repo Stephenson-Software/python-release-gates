@@ -15,10 +15,22 @@ library reports about DIR), `append DIR` (add one save next to the existing ones
   read-3              the candidate still reports every old save exactly as the reference
                       view did, plus the one it added
 
+With FIXTURE_URL (a curated set of saves, a .tar.gz, optionally described by a manifest at
+FIXTURE_MANIFEST_URL in the plugin-fixtures shape — `{library, slug, version, scenario,
+recordedAt, primaryFile?, expected: {saves, unreadable, valid, next_slot}}`), the same
+directory is also read by both versions:
+
+  fixture             the archive (and manifest, when given) downloads and unpacks; a fixture
+                      that was asked for and cannot be read BLOCKS — it is never skipped
+  fixture-baseline    the baseline reads it — the reference view
+  fixture-expected    the reference view carries the manifest's `expected` counts
+  fixture-read-1, -2  the candidate's view equals the reference view
+  fixture-files-kept-1, -2   every fixture file byte-identical after each read
+
 Any doubt about data fails the gate. None of these checks can be waived.
 
-Environment: REPOSITORY, SHA, BASELINE_REF, DISTRIBUTION, SCENARIO, PYTHON_VERSION, WORK,
-RESULT_PATH.
+Environment: REPOSITORY, SHA, BASELINE_REF, DISTRIBUTION, SCENARIO, PYTHON_VERSION,
+FIXTURE_URL, FIXTURE_MANIFEST_URL, WORK, RESULT_PATH.
 """
 
 from __future__ import annotations
@@ -27,6 +39,8 @@ import hashlib
 import json
 import os
 import sys
+import tarfile
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,8 +70,8 @@ def diff_files(before: dict, after: dict) -> list[str]:
     return lines
 
 
-def view(interp: Path, scenario: Path, saves: Path, mode: str = "read") -> tuple[int, object, str]:
-    code, out = run([str(interp), str(scenario), mode, str(saves)])
+def view(interp: Path, scenario: Path, saves: Path, mode: str = "read", env: dict = None) -> tuple[int, object, str]:
+    code, out = run([str(interp), str(scenario), mode, str(saves)], env=env)
     if code != 0:
         return code, None, out
     try:
@@ -74,6 +88,62 @@ def describe_view_diff(ref: dict, got: dict) -> str:
     k = bad[0]
     return (f"{len(bad)} field(s) differ, first `{k}`: baseline {json.dumps(ref.get(k))[:600]} "
             f"vs candidate {json.dumps(got.get(k))[:600]}")
+
+
+def counts(v: object) -> dict:
+    """The countable facts of a view, what a fixture manifest's `expected` may promise."""
+    saves = (v or {}).get("saves") or [] if isinstance(v, dict) else []
+    return {"saves": len(saves),
+            "unreadable": sum(1 for s in saves if (s.get("metadata") or {}).get("unreadable")),
+            "valid": sum(1 for s in saves if s.get("validation") == "valid"),
+            "next_slot": (v or {}).get("next_slot") if isinstance(v, dict) else None}
+
+
+def fixture_phase(result: Result, base: Path, cand: Path, scenario: Path, work: Path,
+                  url: str, manifest_url: str) -> None:
+    fx = work / "fixture"
+    fx.mkdir(parents=True, exist_ok=True)
+    manifest = {}
+    try:
+        archive = work / "fixture.tar.gz"
+        urllib.request.urlretrieve(url, archive)
+        with tarfile.open(archive) as t:
+            for m in t.getmembers():
+                if m.name.startswith(("/", "..")) or "/../" in m.name or not (m.isfile() or m.isdir()):
+                    raise ValueError(f"unsafe member {m.name!r}")
+            t.extractall(fx)
+        if manifest_url:
+            with urllib.request.urlopen(manifest_url, timeout=60) as r:
+                manifest = json.loads(r.read().decode("utf-8"))
+            if not isinstance(manifest, dict):
+                raise ValueError("manifest is not a JSON object")
+    except Exception as e:  # noqa: BLE001 — a fixture that was asked for and cannot be read blocks
+        result.check("fixture", False, f"{url}: {type(e).__name__}: {e}")
+    before = digests(fx)
+    result.doc["fixture"] = {"url": url, "manifestUrl": manifest_url or None, "manifest": manifest or None,
+                             "files": len([v for v in before.values() if v != "dir"])}
+    result.check("fixture", bool(before), f"{result.doc['fixture']['files']} file(s) unpacked"
+                 + (f"; manifest {manifest.get('slug')}/{manifest.get('version')}" if manifest else ""))
+    env = dict(os.environ)
+    if manifest.get("primaryFile"):
+        env["TAK_PRIMARY_FILE"] = str(manifest["primaryFile"])
+    code, ref, out = view(base, scenario, fx, env=env)
+    result.check("fixture-baseline", code == 0 and ref is not None and digests(fx) == before,
+                 f"reference view: {json.dumps(counts(ref))}" if code == 0 else tail(out))
+    expected = manifest.get("expected") or {}
+    if expected:
+        got = counts(ref)
+        bad = {k: (v, got.get(k)) for k, v in expected.items() if got.get(k) != v}
+        result.check("fixture-expected", not bad,
+                     f"manifest promises {json.dumps(expected)}; the baseline reports {json.dumps(got)}")
+    for i in (1, 2):
+        code, got_view, out = view(cand, scenario, fx, env=env)
+        result.check(f"fixture-read-{i}", code == 0 and got_view == ref,
+                     "candidate view equals the baseline view" if code == 0 and got_view == ref
+                     else (describe_view_diff(ref, got_view) if code == 0 and got_view is not None else tail(out)))
+        changed = diff_files(before, digests(fx))
+        result.check(f"fixture-files-kept-{i}", not changed,
+                     "every fixture file byte-identical" if not changed else "; ".join(changed[:20]))
 
 
 def main() -> int:
@@ -145,6 +215,12 @@ def main() -> int:
                      f"{len((final or {}).get('saves') or [])} save(s) listed: every baseline save unchanged + 1 added" if ok
                      else (f"baseline save(s) no longer reported as before: {missing[:3]}" if missing
                            else (tail(out) if code != 0 else f"unexpected listing: {json.dumps(final)[:600]}")))
+        fixture_url = os.environ.get("FIXTURE_URL", "").strip()
+        if fixture_url:
+            fixture_phase(result, base, cand, scenario, work, fixture_url,
+                          os.environ.get("FIXTURE_MANIFEST_URL", "").strip())
+        elif os.environ.get("FIXTURE_MANIFEST_URL", "").strip():
+            result.check("fixture", False, "a fixture manifest was given without the fixture it describes")
     except Stop:
         pass
     except Exception as e:  # noqa: BLE001

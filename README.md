@@ -72,10 +72,25 @@ requirements do not name the library is skipped (`pin-<Name>` says so).
 | `scenario` | — | a script in [`scenarios/`](scenarios) that drives the library's save API: `write DIR`, `read DIR` (one JSON line), `append DIR` |
 | `distribution` | repository name | pip distribution name |
 | `python_version` | `3.12` | interpreter for both versions |
+| `fixture_url` | `""` | optional curated saves (a `.tar.gz` of a save directory) read by both versions |
+| `fixture_manifest_url` | `""` | optional `manifest.json` describing the fixture |
 
 Assertions: `baseline-install`, `candidate-install`, `baseline-write`, `baseline-read`,
 `read-1`, `files-kept-1`, `read-2`, `files-kept-2`, `append`, `files-kept-3`, `read-3`.
-A failure in any of them means saves may not survive the upgrade.
+With a fixture the gate also checks `fixture`, `fixture-baseline`, `fixture-expected`,
+`fixture-read-1`, `fixture-files-kept-1`, `fixture-read-2` and `fixture-files-kept-2`.
+A failure in any of them means saves may not survive the upgrade. A fixture that was asked
+for but cannot be downloaded or unpacked fails the gate. It is never skipped.
+
+A fixture manifest has the same shape as the
+[plugin-fixtures](https://github.com/Dans-Plugins/plugin-fixtures) manifest, with the counts
+taken from the save view:
+
+```json
+{"library": "tak", "slug": "tak", "version": "0.2.0", "scenario": "scenarios/tak_slots.py",
+ "recordedAt": "2026-09-26T00:00:00Z", "primaryFile": "save.json",
+ "expected": {"saves": 5, "unreadable": 3, "valid": 1, "next_slot": 3}}
+```
 
 [`scenarios/tak_slots.py`](scenarios/tak_slots.py) covers tak's save **slot** layer:
 numbered slot directories, the listing and metadata the save menu shows, damaged and empty
