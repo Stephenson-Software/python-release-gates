@@ -43,6 +43,16 @@ on:
         required: false
         type: string
         default: ""
+      install_mode:
+        description: "pip (a library, installed from git) or checkout (an application run from its checkout)"
+        required: false
+        type: string
+        default: "pip"
+      source_root:
+        description: "checkout mode: the directory under the checkout put on PYTHONPATH"
+        required: false
+        type: string
+        default: "src"
   workflow_call:
     inputs:
       repository: {required: true, type: string}
@@ -53,6 +63,8 @@ on:
       python_version: {required: false, type: string, default: "3.12"}
       fixture_url: {required: false, type: string, default: ""}
       fixture_manifest_url: {required: false, type: string, default: ""}
+      install_mode: {required: false, type: string, default: "pip"}
+      source_root: {required: false, type: string, default: "src"}
 
 permissions:
   contents: read
@@ -87,6 +99,8 @@ jobs:
           PYTHON_VERSION: ${{ inputs.python_version }}
           FIXTURE_URL: ${{ inputs.fixture_url }}
           FIXTURE_MANIFEST_URL: ${{ inputs.fixture_manifest_url }}
+          INSTALL_MODE: ${{ inputs.install_mode }}
+          SOURCE_ROOT: ${{ inputs.source_root }}
           WORK: ${{ github.workspace }}/work
           RESULT_PATH: ${{ github.workspace }}/work/result.json
         run: python gates/save_compat.py

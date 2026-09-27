@@ -8,7 +8,9 @@ evidence. The policy that decides what to do with that evidence lives elsewhere.
 These workflows publish nothing and hold no secrets. Their token is read-only.
 
 The first library covered is [tak](https://github.com/Stephenson-Software/tak), the
-text-adventure kit that FishE, Tidewater and Overwinter are built on.
+text-adventure kit that FishE, Tidewater and Overwinter are built on. From `v2` the
+save-compatibility gate also covers applications that are run from a checkout rather than
+installed with pip. The first is [roam](https://github.com/Preponderous-Software/roam).
 
 ## Gates
 
@@ -74,6 +76,8 @@ requirements do not name the library is skipped (`pin-<Name>` says so).
 | `python_version` | `3.12` | interpreter for both versions |
 | `fixture_url` | `""` | optional curated saves (a `.tar.gz` of a save directory) read by both versions |
 | `fixture_manifest_url` | `""` | optional `manifest.json` describing the fixture |
+| `install_mode` | `pip` | `pip`: each version is installed from git as a distribution. `checkout` (v2): each version is a git checkout with its own `requirements.txt` installed, and the scenario runs from that checkout with `<checkout>/<source_root>` on `PYTHONPATH`, `APP_SOURCE` set to the checkout, and SDL's dummy drivers |
+| `source_root` | `src` | checkout mode: the directory put on `PYTHONPATH` |
 
 Assertions: `baseline-install`, `candidate-install`, `baseline-write`, `baseline-read`,
 `read-1`, `files-kept-1`, `read-2`, `files-kept-2`, `append`, `files-kept-3`, `read-3`.
@@ -98,12 +102,25 @@ primary files (listed, unpickable, never reused), directories that are not slots
 free slot, and JSON Schema validation. Each game owns the format of the files inside a slot,
 so that format is covered by the games' own test suites, which the consumers gate runs.
 
+[`scenarios/roam_saves.py`](scenarios/roam_saves.py) (checkout mode) covers roam's worlds.
+Worlds are written through the baseline's own world and save code. Each version's view of a world is
+what that version reconstructs from the files: the listing, the player, the inventory, every
+room's entities, and whether every file validates against that version's own schemas. roam
+treats an unreadable file as absent instead of failing, so a load that quietly fell back to
+defaults shows up as a changed view.
+
 ## Dispatch by hand
 
 ```
 gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v1 \
   -f repository=Stephenson-Software/tak -f sha=<commit> \
   -f baseline_ref=v0.2.0 -f scenario=scenarios/tak_slots.py -f distribution=tak
+```
+
+```
+gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
+  -f repository=Preponderous-Software/roam -f sha=<commit> -f baseline_ref=0.12.0 \
+  -f scenario=scenarios/roam_saves.py -f install_mode=checkout
 ```
 
 Reference a tag, never a branch, so that a change here cannot alter a check already in

@@ -29,8 +29,15 @@ directory is also read by both versions:
 
 Any doubt about data fails the gate. None of these checks can be waived.
 
+INSTALL_MODE `checkout` (v2) is for an application rather than a pip distribution: each
+version is a git checkout of the repository at its ref, with its own `requirements.txt`
+installed into its own virtualenv. The scenario then runs from that checkout (cwd), with
+`<checkout>/<SOURCE_ROOT>` on PYTHONPATH, APP_SOURCE set to the checkout, and SDL's dummy video
+and audio drivers. `baseline-install` / `candidate-install` then mean: the ref checks out (and
+for the candidate, HEAD is exactly SHA) and its requirements install.
+
 Environment: REPOSITORY, SHA, BASELINE_REF, DISTRIBUTION, SCENARIO, PYTHON_VERSION,
-FIXTURE_URL, FIXTURE_MANIFEST_URL, WORK, RESULT_PATH.
+FIXTURE_URL, FIXTURE_MANIFEST_URL, INSTALL_MODE (pip | checkout), SOURCE_ROOT, WORK, RESULT_PATH.
 """
 
 from __future__ import annotations
@@ -44,9 +51,58 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import Result, Stop, installed_commit, make_venv, pip_install, pip_spec, run, tail  # noqa: E402
+from common import Result, Stop, git_url, installed_commit, make_venv, pip_install, pip_spec, run, tail  # noqa: E402
 
 GATES_ROOT = Path(__file__).resolve().parent.parent
+
+
+class Side:
+    """One version under test: its interpreter, and — in checkout mode — the directory the
+    scenario runs in and the environment it runs with. In pip mode both are None: the
+    scenario imports the installed distribution, exactly as before v2."""
+
+    def __init__(self, interp: Path, cwd: Path = None, env: dict = None):
+        self.interp, self.cwd, self.env = interp, cwd, env
+
+    def run(self, argv: list[str], extra_env: dict = None) -> tuple[int, str]:
+        env = None
+        if self.env is not None or extra_env:
+            env = dict(self.env if self.env is not None else os.environ)
+            env.update(extra_env or {})
+        return run([str(self.interp), *argv], cwd=self.cwd, env=env)
+
+
+def checkout(repository: str, ref: str, dest: Path) -> tuple[int, str, str]:
+    """A shallow checkout of `ref` (a tag or a full sha) → (code, HEAD sha or "", output)."""
+    dest.mkdir(parents=True, exist_ok=True)
+    out_all = ""
+    for argv in (["git", "init", "-q"], ["git", "fetch", "-q", "--depth", "1", git_url(repository), ref],
+                 ["git", "checkout", "-q", "FETCH_HEAD"]):
+        code, out = run(argv, cwd=dest)
+        out_all += out
+        if code != 0:
+            return code, "", out_all
+    code, out = run(["git", "rev-parse", "HEAD"], cwd=dest)
+    return code, (out.strip().splitlines() or [""])[-1] if code == 0 else "", out_all + out
+
+
+def checkout_side(repository: str, ref: str, work: Path, name: str, python: str,
+                  source_root: str) -> tuple[Side, str, str]:
+    """Check out `ref`, install its requirements.txt into a fresh virtualenv → (side, HEAD, error)."""
+    src = work / f"src-{name}"
+    code, head, out = checkout(repository, ref, src)
+    if code != 0 or not head:
+        return None, "", f"checkout of {ref} failed: {tail(out)}"
+    interp = make_venv(work / f"venv-{name}", f"python{python}")
+    req = src / "requirements.txt"
+    if req.is_file():
+        code, out = pip_install(interp, ["-r", str(req)], cwd=src)
+        if code != 0:
+            return None, head, f"requirements.txt of {ref} did not install: {tail(out)}"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (str(src / source_root), env.get("PYTHONPATH", "")) if p)
+    env.update({"APP_SOURCE": str(src), "SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy"})
+    return Side(interp, cwd=src, env=env), head, ""
 
 
 def digests(root: Path) -> dict[str, str]:
@@ -70,8 +126,8 @@ def diff_files(before: dict, after: dict) -> list[str]:
     return lines
 
 
-def view(interp: Path, scenario: Path, saves: Path, mode: str = "read", env: dict = None) -> tuple[int, object, str]:
-    code, out = run([str(interp), str(scenario), mode, str(saves)], env=env)
+def view(side: Side, scenario: Path, saves: Path, mode: str = "read", env: dict = None) -> tuple[int, object, str]:
+    code, out = side.run([str(scenario), mode, str(saves)], extra_env=env)
     if code != 0:
         return code, None, out
     try:
@@ -99,7 +155,7 @@ def counts(v: object) -> dict:
             "next_slot": (v or {}).get("next_slot") if isinstance(v, dict) else None}
 
 
-def fixture_phase(result: Result, base: Path, cand: Path, scenario: Path, work: Path,
+def fixture_phase(result: Result, base: Side, cand: Side, scenario: Path, work: Path,
                   url: str, manifest_url: str) -> None:
     fx = work / "fixture"
     fx.mkdir(parents=True, exist_ok=True)
@@ -124,7 +180,7 @@ def fixture_phase(result: Result, base: Path, cand: Path, scenario: Path, work: 
                              "files": len([v for v in before.values() if v != "dir"])}
     result.check("fixture", bool(before), f"{result.doc['fixture']['files']} file(s) unpacked"
                  + (f"; manifest {manifest.get('slug')}/{manifest.get('version')}" if manifest else ""))
-    env = dict(os.environ)
+    env = {}
     if manifest.get("primaryFile"):
         env["TAK_PRIMARY_FILE"] = str(manifest["primaryFile"])
     code, ref, out = view(base, scenario, fx, env=env)
@@ -154,7 +210,10 @@ def main() -> int:
     python = os.environ.get("PYTHON_VERSION", "").strip() or "3.12"
     work = Path(os.environ.get("WORK", "work")).resolve()
     result = Result("save-compat", repository, sha, os.environ.get("RESULT_PATH", str(work / "result.json")))
-    result.doc.update({"baselineRef": baseline_ref, "scenario": os.environ["SCENARIO"], "pythonVersion": python})
+    mode = os.environ.get("INSTALL_MODE", "").strip() or "pip"
+    source_root = os.environ.get("SOURCE_ROOT", "").strip() or "src"
+    result.doc.update({"baselineRef": baseline_ref, "scenario": os.environ["SCENARIO"], "pythonVersion": python,
+                       "installMode": mode})
     saves = work / "saves"
     try:
         if not baseline_ref:
@@ -162,21 +221,33 @@ def main() -> int:
         if not scenario.is_file() or GATES_ROOT not in scenario.parents:
             result.check("harness", False, f"scenario {os.environ['SCENARIO']} is not a file in the gates repository")
 
-        base = make_venv(work / "venv-baseline", f"python{python}")
-        code, out = pip_install(base, [pip_spec(distribution, repository, baseline_ref)])
-        base_commit = installed_commit(base, distribution) if code == 0 else None
-        result.doc["baselineSha"] = base_commit
-        result.check("baseline-install", code == 0 and bool(base_commit),
-                     f"{distribution} {baseline_ref} installed at {base_commit}" if code == 0 else f"install failed: {tail(out)}")
+        if mode not in ("pip", "checkout"):
+            result.check("harness", False, f"unknown install_mode {mode!r} (pip | checkout)")
+        if mode == "checkout":
+            base, base_commit, err = checkout_side(repository, baseline_ref, work, "baseline", python, source_root)
+            result.doc["baselineSha"] = base_commit or None
+            result.check("baseline-install", base is not None,
+                         f"{baseline_ref} checked out at {base_commit}; requirements installed" if base else err)
+            cand, got, err = checkout_side(repository, sha, work, "candidate", python, source_root)
+            result.check("candidate-install", cand is not None and got == sha,
+                         f"checked out at {got}; requirements installed" if cand and got == sha
+                         else (err or f"HEAD is {got}, not {sha}"))
+        else:
+            base = Side(make_venv(work / "venv-baseline", f"python{python}"))
+            code, out = pip_install(base.interp, [pip_spec(distribution, repository, baseline_ref)])
+            base_commit = installed_commit(base.interp, distribution) if code == 0 else None
+            result.doc["baselineSha"] = base_commit
+            result.check("baseline-install", code == 0 and bool(base_commit),
+                         f"{distribution} {baseline_ref} installed at {base_commit}" if code == 0 else f"install failed: {tail(out)}")
 
-        cand = make_venv(work / "venv-candidate", f"python{python}")
-        code, out = pip_install(cand, [pip_spec(distribution, repository, sha)])
-        got = installed_commit(cand, distribution) if code == 0 else None
-        result.check("candidate-install", code == 0 and got == sha,
-                     f"{distribution} installed at {got}" if code == 0 else f"install failed: {tail(out)}")
+            cand = Side(make_venv(work / "venv-candidate", f"python{python}"))
+            code, out = pip_install(cand.interp, [pip_spec(distribution, repository, sha)])
+            got = installed_commit(cand.interp, distribution) if code == 0 else None
+            result.check("candidate-install", code == 0 and got == sha,
+                         f"{distribution} installed at {got}" if code == 0 else f"install failed: {tail(out)}")
 
         saves.mkdir(parents=True, exist_ok=True)
-        code, out = run([str(base), str(scenario), "write", str(saves)])
+        code, out = base.run([str(scenario), "write", str(saves)])
         written = digests(saves)
         result.doc["files"] = len([v for v in written.values() if v != "dir"])
         result.check("baseline-write", code == 0 and bool(written),
@@ -195,7 +266,7 @@ def main() -> int:
             result.check(f"files-kept-{i}", not changed,
                          f"{result.doc['files']} file(s) byte-identical" if not changed else "; ".join(changed[:20]))
 
-        code, out = run([str(cand), str(scenario), "append", str(saves)])
+        code, out = cand.run([str(scenario), "append", str(saves)])
         result.check("append", code == 0, "candidate added a save beside the baseline's" if code == 0 else tail(out))
         after = digests(saves)
         changed = [d for d in diff_files(written, after) if not d.startswith("added ")]
