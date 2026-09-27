@@ -27,6 +27,13 @@ directory is also read by both versions:
   fixture-read-1, -2  the candidate's view equals the reference view
   fixture-files-kept-1, -2   every fixture file byte-identical after each read
 
+A view may carry `fidelity` blocks: `{name: true|false}`, each saying whether the version
+reproduced what the save FILE records (e.g. every inventory item in the slot the file names).
+Those are judged against the file, not against the other version: everything outside them
+must be equal, and every fidelity value in the candidate's view must be true. A baseline that
+did not reproduce its own file is reported, never held against the candidate; a candidate
+that does not is a failure.
+
 Any doubt about data fails the gate. None of these checks can be waived.
 
 INSTALL_MODE `checkout` (v2) is for an application rather than a pip distribution: each
@@ -136,14 +143,70 @@ def view(side: Side, scenario: Path, saves: Path, mode: str = "read", env: dict 
         return 1, None, out
 
 
+def first_difference(a: object, b: object, path: str = "") -> str:
+    """The path of the first place two views differ, descending into dicts and equal-length lists."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in sorted(set(a) | set(b), key=str):
+            if a.get(k) != b.get(k):
+                return first_difference(a.get(k), b.get(k), f"{path}.{k}" if path else str(k))
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+        for i, (x, y) in enumerate(zip(a, b)):
+            if x != y:
+                name = x.get("name") if isinstance(x, dict) else None
+                return first_difference(x, y, f"{path}[{i}{' ' + repr(name) if name else ''}]")
+    return f"{path}: baseline {json.dumps(a)[:300]} vs candidate {json.dumps(b)[:300]}"
+
+
 def describe_view_diff(ref: dict, got: dict) -> str:
     keys = sorted(set(ref) | set(got)) if isinstance(ref, dict) and isinstance(got, dict) else []
     bad = [k for k in keys if ref.get(k) != got.get(k)]
     if not bad:
         return "views differ"
     k = bad[0]
+    if isinstance(ref.get(k), (dict, list)):
+        return f"{len(bad)} field(s) differ; first at {first_difference(ref.get(k), got.get(k), k)}"
     return (f"{len(bad)} field(s) differ, first `{k}`: baseline {json.dumps(ref.get(k))[:600]} "
             f"vs candidate {json.dumps(got.get(k))[:600]}")
+
+
+def strip_fidelity(v: object) -> object:
+    if isinstance(v, dict):
+        return {k: strip_fidelity(x) for k, x in v.items() if k != "fidelity"}
+    if isinstance(v, list):
+        return [strip_fidelity(x) for x in v]
+    return v
+
+
+def fidelity_failures(v: object, path: str = "") -> list[str]:
+    """Paths of every fidelity value that is not exactly true."""
+    out = []
+    if isinstance(v, dict):
+        for k, x in v.items():
+            if k == "fidelity" and isinstance(x, dict):
+                out += [f"{path}.{name}" if path else name for name, ok in x.items() if ok is not True]
+            elif k == "fidelity":
+                out.append(f"{path}.fidelity (not an object)")
+            else:
+                out += fidelity_failures(x, f"{path}.{k}" if path else str(k))
+    elif isinstance(v, list):
+        for i, x in enumerate(v):
+            out += fidelity_failures(x, f"{path}[{i}]")
+    return out
+
+
+def compare(ref: object, got: object) -> tuple[bool, str]:
+    """The candidate's view against the baseline's: equal outside the fidelity blocks, and
+    every fidelity value in the candidate's view true."""
+    a, b = strip_fidelity(ref), strip_fidelity(got)
+    if a != b:
+        return False, describe_view_diff(a, b)
+    bad = fidelity_failures(got)
+    if bad:
+        return False, f"the candidate does not reproduce what the save files record at {len(bad)} place(s): {bad[:5]}"
+    base_bad = fidelity_failures(ref)
+    return True, ("candidate view equals the baseline view" + (
+        f"; the baseline did not reproduce its own files at {len(base_bad)} place(s) and the candidate does: {base_bad[:5]}"
+        if base_bad else ""))
 
 
 def counts(v: object) -> dict:
@@ -194,9 +257,8 @@ def fixture_phase(result: Result, base: Side, cand: Side, scenario: Path, work: 
                      f"manifest promises {json.dumps(expected)}; the baseline reports {json.dumps(got)}")
     for i in (1, 2):
         code, got_view, out = view(cand, scenario, fx, env=env)
-        result.check(f"fixture-read-{i}", code == 0 and got_view == ref,
-                     "candidate view equals the baseline view" if code == 0 and got_view == ref
-                     else (describe_view_diff(ref, got_view) if code == 0 and got_view is not None else tail(out)))
+        same, why = compare(ref, got_view) if code == 0 and got_view is not None else (False, tail(out))
+        result.check(f"fixture-read-{i}", same, why)
         changed = diff_files(before, digests(fx))
         result.check(f"fixture-files-kept-{i}", not changed,
                      "every fixture file byte-identical" if not changed else "; ".join(changed[:20]))
@@ -259,9 +321,8 @@ def main() -> int:
 
         for i in (1, 2):
             code, got_view, out = view(cand, scenario, saves)
-            result.check(f"read-{i}", code == 0 and got_view == ref,
-                         "candidate view equals the baseline view" if code == 0 and got_view == ref
-                         else (describe_view_diff(ref, got_view) if code == 0 and got_view is not None else tail(out)))
+            same, why = compare(ref, got_view) if code == 0 and got_view is not None else (False, tail(out))
+            result.check(f"read-{i}", same, why)
             changed = diff_files(written, digests(saves))
             result.check(f"files-kept-{i}", not changed,
                          f"{result.doc['files']} file(s) byte-identical" if not changed else "; ".join(changed[:20]))
@@ -276,15 +337,18 @@ def main() -> int:
         code, final, out = view(cand, scenario, saves)
         ok = code == 0 and isinstance(final, dict) and isinstance(ref, dict)
         missing = []
+        unfaithful = []
         if ok:
-            old = {json.dumps(s, sort_keys=True) for s in ref.get("saves") or []}
-            now = {json.dumps(s, sort_keys=True) for s in final.get("saves") or []}
+            old = {json.dumps(strip_fidelity(s), sort_keys=True) for s in ref.get("saves") or []}
+            now = {json.dumps(strip_fidelity(s), sort_keys=True) for s in final.get("saves") or []}
             missing = sorted(old - now)
-            ok = not missing and len(now) == len(old) + 1
+            unfaithful = fidelity_failures(final)
+            ok = not missing and not unfaithful and len(now) == len(old) + 1
         result.doc["candidateView"] = final
         result.check("read-3", ok,
                      f"{len((final or {}).get('saves') or [])} save(s) listed: every baseline save unchanged + 1 added" if ok
                      else (f"baseline save(s) no longer reported as before: {missing[:3]}" if missing
+                           else f"the candidate does not reproduce what the save files record: {unfaithful[:5]}" if unfaithful
                            else (tail(out) if code != 0 else f"unexpected listing: {json.dumps(final)[:600]}")))
         fixture_url = os.environ.get("FIXTURE_URL", "").strip()
         if fixture_url:
