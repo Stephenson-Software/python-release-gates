@@ -66,6 +66,7 @@ gates/summarize.py        result.json -> Markdown for $GITHUB_STEP_SUMMARY
 scenarios/                Per-library save scenarios: `write DIR`, `read DIR` (one JSON line), `append DIR`
   tak_slots.py            tak's save-slot layer (tak.saves)
   roam_saves.py           roam worlds (checkout mode)
+  trace_client_install_id.py  trace-client-python install-ID file (install_id_from_file)
 .github/workflows/        tests.yml, consumers.yml, save-compat.yml (the gates) + check.yml (CI for this repo)
 ```
 
