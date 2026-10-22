@@ -68,6 +68,7 @@ scenarios/                Per-library save scenarios: `write DIR`, `read DIR` (o
   roam_saves.py           roam worlds (checkout mode)
   trace_client_install_id.py  trace-client-python install-ID file (install_id_from_file)
   gardener_state.py       gardener's per-device state dir (run history, lists, cursor, hub store)
+  usd_recorder_recordings.py  usd-recorder's .usda/.usdc recordings and usd-replay/1 replays
 .github/workflows/        tests.yml, consumers.yml, save-compat.yml (the gates) + check.yml (CI for this repo)
 ```
 
