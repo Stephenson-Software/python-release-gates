@@ -128,6 +128,15 @@ entry is loaded in place and also handed to a disabled client, which must load a
 nothing. Nothing is sent over the network. Dispatch with `distribution=trace-client` and a bare
 baseline tag such as `0.4.1`.
 
+[`scenarios/gardener_state.py`](scenarios/gardener_state.py) covers gardener's state
+directory, one per device: the SQLite run history, the garden list, the merge allow-list,
+the overnight cursor, `notify.env` and `hub.env`, and a hub store with two devices' pushed
+runs, their lists and a heartbeat. Everything is written and read through gardener's own
+functions, with every clock the readers take pinned. Any write changes a SQLite file's
+bytes, so `append` copies one device's directory and records a run in the copy through the
+candidate's writer path. That write runs the candidate's migrations on the baseline's file,
+and the scenario fails unless every earlier run still reads the same afterwards.
+
 ## Dispatch by hand
 
 ```
@@ -140,6 +149,12 @@ gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates 
 gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
   -f repository=Preponderous-Software/roam -f sha=<commit> -f baseline_ref=0.12.0 \
   -f scenario=scenarios/roam_saves.py -f install_mode=checkout
+```
+
+```
+gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
+  -f repository=Stephenson-Software/gardener -f sha=<commit> -f baseline_ref=v0.4.7 \
+  -f scenario=scenarios/gardener_state.py -f distribution=gardener
 ```
 
 Reference a tag, never a branch, so that a change here cannot alter a check already in
