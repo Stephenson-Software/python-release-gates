@@ -61,8 +61,12 @@ interpreter `install-<py>`, `import-<py>` (only when `package` is set), `tests-<
 | `distribution` | repository name | the name the consumers' `requirements.txt` uses |
 | `python_version` | `3.12` | interpreter for every consumer |
 | `test_command` | `python -m pytest -q` | run in each consumer's checkout |
+| `pin_sources` | `requirements` | where a consumer's pin is looked for: `requirements` = `requirements.txt` only; `all` (v3) = `requirements.txt`, then any other `requirements*.txt`, then `pyproject.toml` `[project]` dependencies and optional-dependencies |
 
-For each consumer, its default branch is cloned and its own `requirements.txt` is installed.
+For each consumer, its default branch is cloned and installed the way its pin is: its own
+`requirements.txt`; with `pin_sources: all`, also the side requirements file that carries the
+pin (`requirements-record.txt`, say), or the consumer itself (`pip install -e .[extra]`) when
+the pin is a `pyproject.toml` dependency or extra.
 Its suite is then run twice: once on the pin it carries today (`control-<Name>`) and once
 with the candidate installed over it (`install-<Name>`, `candidate-<Name>`). A consumer whose
 requirements do not name the library is skipped (`pin-<Name>` says so). An empty consumer

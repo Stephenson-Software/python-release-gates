@@ -31,7 +31,7 @@ The other gates follow the same pattern:
 | Script | Required env | Optional env |
 |---|---|---|
 | `gates/tests_gate.py` | `REPOSITORY`, `SHA` (expects the candidate checked out at `$WORK/src`, as the workflow does) | `PACKAGE`, `PYTHON_VERSIONS`, `INSTALL_EXTRAS`, `TEST_COMMAND`, `EXPECTED_VERSION`, `WORK`, `RESULT_PATH` |
-| `gates/consumers_gate.py` | `REPOSITORY`, `SHA`, `CONSUMERS` | `DISTRIBUTION`, `PYTHON_VERSION`, `TEST_COMMAND`, `WORK`, `RESULT_PATH` |
+| `gates/consumers_gate.py` | `REPOSITORY`, `SHA`, `CONSUMERS` | `DISTRIBUTION`, `PYTHON_VERSION`, `TEST_COMMAND`, `PIN_SOURCES`, `WORK`, `RESULT_PATH` |
 | `gates/save_compat.py` | `REPOSITORY`, `SHA`, `BASELINE_REF`, `SCENARIO` | `DISTRIBUTION`, `PYTHON_VERSION`, `FIXTURE_URL`, `FIXTURE_MANIFEST_URL`, `INSTALL_MODE` (`pip`/`checkout`), `SOURCE_ROOT`, `WORK`, `RESULT_PATH` |
 
 `WORK` defaults to `./work` (gitignored); `RESULT_PATH` defaults to `$WORK/result.json`. Exit code is 0 only when every assertion passed. Render a result as Markdown with:
