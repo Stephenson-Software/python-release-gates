@@ -31,8 +31,10 @@ named `<repository> @ <sha>` so a dispatched run can be found again.
  "passed": true, "assertions": [{"name": "tests-3.12", "passed": true, "detail": "259 passed in 4.1s"}]}
 ```
 
-`candidateSha` is the commit the gate verified; for the consumers and save-compatibility
-gates it is also the commit pip recorded for the installed copy (PEP 610). An assertion named
+`candidateSha` is the commit the gate verified. The tests gate checks it against the checkout's
+`HEAD`. The consumers gate and the save-compatibility gate in `pip` mode check it against the
+commit pip recorded for the installed copy (PEP 610). The save-compatibility gate in
+`checkout` mode checks it against the candidate checkout's `HEAD`. An assertion named
 `harness` or `control` means the check could not be run at all. It is never a verdict on the
 candidate.
 
@@ -47,8 +49,8 @@ candidate.
 | `test_command` | `python -m pytest -q` | run in the checkout; a leading `python` is the gate's virtualenv |
 | `expected_version` | `""` | the `[project] version` pyproject.toml must declare |
 
-Assertions: `checkout`, `version`, then for each interpreter `install-<py>`, `import-<py>`,
-`tests-<py>`.
+Assertions: `checkout`, `version` (only when `expected_version` is set), then for each
+interpreter `install-<py>`, `import-<py>` (only when `package` is set), `tests-<py>`.
 
 ## Consumers gate
 
@@ -63,7 +65,9 @@ Assertions: `checkout`, `version`, then for each interpreter `install-<py>`, `im
 For each consumer, its default branch is cloned and its own `requirements.txt` is installed.
 Its suite is then run twice: once on the pin it carries today (`control-<Name>`) and once
 with the candidate installed over it (`install-<Name>`, `candidate-<Name>`). A consumer whose
-requirements do not name the library is skipped (`pin-<Name>` says so).
+requirements do not name the library is skipped (`pin-<Name>` says so). An empty consumer
+list, a consumer that cannot be cloned, or one whose own requirements do not install fails as
+`control`: the check could not run.
 
 ## Save-compatibility gate
 
@@ -81,10 +85,14 @@ requirements do not name the library is skipped (`pin-<Name>` says so).
 
 Assertions: `baseline-install`, `candidate-install`, `baseline-write`, `baseline-read`,
 `read-1`, `files-kept-1`, `read-2`, `files-kept-2`, `append`, `files-kept-3`, `read-3`.
-With a fixture the gate also checks `fixture`, `fixture-baseline`, `fixture-expected`,
-`fixture-read-1`, `fixture-files-kept-1`, `fixture-read-2` and `fixture-files-kept-2`.
+With a fixture the gate also checks `fixture`, `fixture-baseline`, `fixture-expected` (only
+when the manifest gives `expected` counts), `fixture-read-1`, `fixture-files-kept-1`,
+`fixture-read-2` and `fixture-files-kept-2`.
 A failure in any of them means saves may not survive the upgrade. A fixture that was asked
-for but cannot be downloaded or unpacked fails the gate. It is never skipped.
+for but cannot be downloaded or unpacked fails the gate. It is never skipped. A manifest
+given without a fixture fails as `fixture`. A scenario that is not a file in this repository
+or an unknown `install_mode` fails as `harness`. The artifact also holds the `saves/`
+directory the baseline wrote and the candidate appended to.
 
 A fixture manifest has the same shape as the
 [plugin-fixtures](https://github.com/Dans-Plugins/plugin-fixtures) manifest, with the counts
