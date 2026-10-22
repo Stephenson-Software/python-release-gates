@@ -117,6 +117,17 @@ room's entities, and whether every file validates against that version's own sch
 treats an unreadable file as absent instead of failing, so a load that quietly fell back to
 defaults shows up as a changed view.
 
+[`scenarios/trace_client_install_id.py`](scenarios/trace_client_install_id.py) covers
+trace-client-python's one piece of state, the installation-ID file (`install_id_file=`,
+`TraceClient.install_id_from_file`): a file the client created, hand-written IDs it accepts
+(whitespace, CRLF, blank or non-ID lines before the ID, 255 characters), files with no ID line
+that it replaces with a fresh uuid4 (empty, too long, bad or non-ASCII characters, a BOM), and
+entries it cannot read and must leave alone (not UTF-8, a directory). A file the loader would
+replace is loaded from a temporary copy, so reading leaves the directory as it was; every other
+entry is loaded in place and also handed to a disabled client, which must load and write
+nothing. Nothing is sent over the network. Dispatch with `distribution=trace-client` and a bare
+baseline tag such as `0.4.1`.
+
 ## Dispatch by hand
 
 ```
