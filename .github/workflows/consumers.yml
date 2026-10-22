@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         default: "python -m pytest -q"
+      pin_sources:
+        description: "Where a consumer's pin is looked for: requirements (requirements.txt only) or all (also requirements*.txt and pyproject.toml dependencies/extras; v3)"
+        required: false
+        type: string
+        default: "requirements"
   workflow_call:
     inputs:
       repository: {required: true, type: string}
@@ -42,6 +47,7 @@ on:
       distribution: {required: false, type: string, default: ""}
       python_version: {required: false, type: string, default: "3.12"}
       test_command: {required: false, type: string, default: "python -m pytest -q"}
+      pin_sources: {required: false, type: string, default: "requirements"}
 
 permissions:
   contents: read
@@ -74,6 +80,7 @@ jobs:
           DISTRIBUTION: ${{ inputs.distribution }}
           PYTHON_VERSION: ${{ inputs.python_version }}
           TEST_COMMAND: ${{ inputs.test_command }}
+          PIN_SOURCES: ${{ inputs.pin_sources }}
           WORK: ${{ github.workspace }}/work
           RESULT_PATH: ${{ github.workspace }}/work/result.json
         run: python gates/consumers_gate.py

@@ -3,7 +3,8 @@ with the version it pins today (the control phase), then with the candidate comm
 
 A consumer that passes on its current pin and fails on the candidate is a REGRESSION and fails
 the gate. A consumer that already fails on its current pin is PRE-EXISTING: reported, never
-held against the candidate. A consumer whose requirements do not name the library is SKIPPED.
+held against the candidate. A consumer whose requirements do not name the library (find_pin; PIN_SOURCES `all` also
+reads requirements*.txt and pyproject.toml dependencies) is SKIPPED.
 
 Assertions per consumer <Name> (the run stops at the first failure):
 
@@ -16,7 +17,7 @@ Assertions per consumer <Name> (the run stops at the first failure):
   candidate-<Name>    the consumer's suite on the candidate: must pass unless pre-existing
 
 Environment: REPOSITORY, SHA, DISTRIBUTION, CONSUMERS (lines `owner/repo [extra pip package…]`),
-PYTHON_VERSION, TEST_COMMAND, WORK, RESULT_PATH.
+PYTHON_VERSION, TEST_COMMAND, PIN_SOURCES (`requirements` | `all`, see find_pin), WORK, RESULT_PATH.
 """
 
 from __future__ import annotations
@@ -32,20 +33,55 @@ from common import (Result, Stop, env_list, git_url, installed_commit, make_venv
                     pip_spec, pytest_summary, run, tail)
 
 
-def requirement_line(consumer: Path, repository: str, distribution: str) -> str:
-    """The requirements.txt line that installs the library, or ''."""
-    req = consumer / "requirements.txt"
-    if not req.exists():
-        return ""
+def _names_library(spec: str, url: str, distribution: str) -> bool:
+    s = spec.strip()
+    if not s or s.startswith(("#", "-")):
+        return False
+    name = re.split(r"[\s<>=!~@\[;]", s, 1)[0].lower().replace("_", "-")
+    return url in s.lower() or name == distribution.lower().replace("_", "-")
+
+
+def find_pin(consumer: Path, repository: str, distribution: str,
+             sources: str = "requirements") -> tuple[str, str, list[str]]:
+    """Where the consumer pins the library: (the requirement line, where it was found, the pip
+    arguments that install the consumer the way it installs itself), or ("", "", []).
+
+    PIN_SOURCES `requirements` (the default, the v1/v2 behaviour): requirements.txt only.
+    PIN_SOURCES `all` (v3): in order, requirements.txt; any other requirements*.txt (apex and ophidian
+    keep optional recording dependencies in requirements-record.txt); then pyproject.toml's
+    [project] dependencies and optional-dependencies (viron-usd, usd-web's `dev` extra). A pin
+    in a side requirements file installs requirements.txt too, when there is one; a pin in
+    pyproject.toml installs the consumer itself, editable, with the extra that carries it."""
     url = git_url(repository).lower()
-    for line in req.read_text().splitlines():
-        s = line.strip()
-        if not s or s.startswith("#"):
+    files = [consumer / "requirements.txt"]
+    if sources == "all":
+        files += sorted(f for f in consumer.glob("requirements*.txt") if f.name != "requirements.txt")
+    for req in files:
+        if not req.is_file():
             continue
-        name = re.split(r"[\s<>=!~@\[;]", s, 1)[0].lower()
-        if url in s.lower() or name == distribution.lower():
-            return s
-    return ""
+        for line in req.read_text().splitlines():
+            if _names_library(line, url, distribution):
+                args = ["-r", "requirements.txt"] if (consumer / "requirements.txt").is_file() else []
+                if req.name != "requirements.txt":
+                    args += ["-r", req.name]
+                return line.strip(), req.name, args
+    pyproject = consumer / "pyproject.toml"
+    if sources == "all" and pyproject.is_file():
+        import tomllib
+        project = tomllib.loads(pyproject.read_text()).get("project") or {}
+        for dep in project.get("dependencies") or []:
+            if _names_library(dep, url, distribution):
+                return dep.strip(), "pyproject.toml [project] dependencies", ["-e", "."]
+        for extra, deps in sorted((project.get("optional-dependencies") or {}).items()):
+            for dep in deps:
+                if _names_library(dep, url, distribution):
+                    return dep.strip(), f"pyproject.toml [{extra}] extra", ["-e", f".[{extra}]"]
+    return "", "", []
+
+
+def requirement_line(consumer: Path, repository: str, distribution: str, sources: str = "requirements") -> str:
+    """The line that installs the library, wherever find_pin finds it, or ''."""
+    return find_pin(consumer, repository, distribution, sources)[0]
 
 
 def suite(interp: Path, command: str, cwd: Path) -> tuple[int, str]:
@@ -63,6 +99,9 @@ def main() -> int:
     result = Result("consumers", repository, sha, os.environ.get("RESULT_PATH", str(work / "result.json")))
     python = os.environ.get("PYTHON_VERSION", "").strip() or "3.12"
     command = os.environ.get("TEST_COMMAND", "").strip() or "python -m pytest -q"
+    sources = os.environ.get("PIN_SOURCES", "").strip() or "requirements"
+    if sources not in ("requirements", "all"):
+        raise SystemExit(f"PIN_SOURCES must be `requirements` or `all`, not {sources!r}")
     consumers = []
     for line in env_list("CONSUMERS"):
         parts = line.split()
@@ -81,17 +120,19 @@ def main() -> int:
             if code != 0:
                 result.check("control", False, f"{repo}: clone failed: {tail(out)}")
             entry["sha"] = run(["git", "-C", str(dest), "rev-parse", "HEAD"])[1].strip()
-            pin = requirement_line(dest, repository, distribution)
+            pin, where, install_args = find_pin(dest, repository, distribution, sources)
             entry["pin"] = pin or None
+            entry["pinnedIn"] = where or None
             if not pin:
-                entry["skipped"] = f"requirements.txt does not name {distribution}"
+                entry["skipped"] = (f"no requirements*.txt or pyproject.toml dependency names {distribution}" if sources == "all"
+                                    else f"requirements.txt does not name {distribution}")
                 result.check(f"pin-{name}", True, f"SKIPPED — {entry['skipped']}")
                 continue
-            result.check(f"pin-{name}", True, f"{repo} @ {entry['sha'][:10]} pins `{pin}`")
+            result.check(f"pin-{name}", True, f"{repo} @ {entry['sha'][:10]} pins `{pin}` ({where})")
 
             interp = make_venv(work / f"venv-{name}", f"python{python}")
             base = ["pytest", "pytest-cov", *extras]
-            args = base + (["-r", "requirements.txt"] if (dest / "requirements.txt").exists() else [])
+            args = base + install_args
             code, out = pip_install(interp, args, cwd=dest)
             if code != 0:
                 result.check("control", False, f"{repo}: its own requirements do not install: {tail(out)}")
