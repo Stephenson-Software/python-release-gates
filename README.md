@@ -137,6 +137,16 @@ bytes, so `append` copies one device's directory and records a run in the copy t
 candidate's writer path. That write runs the candidate's migrations on the baseline's file,
 and the scenario fails unless every earlier run still reads the same afterwards.
 
+[`scenarios/usd_recorder_recordings.py`](scenarios/usd_recorder_recordings.py) covers
+usd-recorder's recordings. The baseline writes them through the library's public API:
+`Recorder` stages (unchunked `.usda` and binary `.usdc`, chunked into value clips and
+flattened, published live by checkpoints) and `usd-replay/1` replays. Between them they use
+every typed value, event channels, entities that arrive late, leave and come back, and every
+optional part of the replay contract. Each version's view of a recording is what its own
+readers report: `inspect_stage`, `has_clips`, every attribute and computed visibility resolved
+at every tick for a stage, and `validate_replay`, `replay_info` and `read_replay` for a
+replay.
+
 ## Dispatch by hand
 
 ```
@@ -155,6 +165,12 @@ gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates 
 gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
   -f repository=Stephenson-Software/gardener -f sha=<commit> -f baseline_ref=v0.4.7 \
   -f scenario=scenarios/gardener_state.py -f distribution=gardener
+```
+
+```
+gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
+  -f repository=Preponderous-Software/usd-recorder -f sha=<commit> -f baseline_ref=v0.2.0 \
+  -f scenario=scenarios/usd_recorder_recordings.py -f distribution=usd-recorder
 ```
 
 Reference a tag, never a branch, so that a change here cannot alter a check already in
