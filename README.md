@@ -38,6 +38,16 @@ commit pip recorded for the installed copy (PEP 610). The save-compatibility gat
 `harness` or `control` means the check could not be run at all. It is never a verdict on the
 candidate.
 
+## Time limits and retries
+
+| Limit | Where | What happens when it is reached |
+|---|---|---|
+| 1800 s per step | every `git`, `pip`, `venv` and scenario command a gate runs | the step is stopped and reported as exit 124, `timed out after 1800s`, which fails the assertion the step belongs to |
+| 3600 s per test suite | the tests gate's `test_command`, and each consumers-gate suite run | the same, with `timed out after 3600s`. A consumer whose suite times out on its current pin counts as red there, so it is reported as pre-existing |
+| 60 s | the save-compatibility gate's `fixture_manifest_url` download | the download fails, so the gate fails as `fixture`. The fixture archive itself has no timeout of its own |
+| one retry | every `pip install` of a candidate, a baseline or a consumer's requirements | a failed install, including one that timed out, is run once more before its assertion fails. Nothing else is retried |
+| 60 / 90 / 30 min per job | `tests.yml` / `consumers.yml` / `save-compat.yml` (`timeout-minutes`) | GitHub cancels the job. The summary and artifact steps still run, but `result.json` holds only the assertions recorded before the cancellation, with no failing one for the step that was cut off, so read the job's conclusion as well ([#8](https://github.com/Stephenson-Software/python-release-gates/issues/8)) |
+
 ## Tests gate
 
 | Input | Default | Meaning |
