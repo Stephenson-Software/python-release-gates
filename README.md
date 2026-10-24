@@ -182,9 +182,21 @@ on a copy, so they never touch the saves.
 | [`cave_saves.py`](scenarios/cave_saves.py) | [Cave](https://github.com/Stephenson-Software/Cave-Console-Game) | one `savefile.txt` per installation, written by the game answered on stdin; the view is where the game resumes | `source_root=.` |
 | [`ophidian_saves.py`](scenarios/ophidian_saves.py) | [ophidian](https://github.com/Preponderous-Software/ophidian) | one `save.json` per installation (progress across runs and an obituary per run), written while the bot plays the text-UI game loop; a version from before `src/progression/save.py` keeps no saves | `source_root=src` |
 
-A slots-era FishE reading a flat 2.x save moves it into a slot when it launches. Because the
-`append` step launches the candidate, `files-kept-3` reports those files as removed. That is what
-upgrading from 2.x does to a player's data directory, and the gate does not pass it.
+A slots-era FishE reading a flat 2.x save moves it into a slot when it launches, and the `append`
+step launches the candidate. `fishe_saves.py` therefore declares that one move:
+
+```python
+SAVE_MIGRATIONS = {"player.json": "slot_1/player.json", "stats.json": "slot_1/stats.json",
+                   "timeService.json": "slot_1/timeService.json"}
+```
+
+A scenario may declare `SAVE_MIGRATIONS = {old path: new path}` (relative to the save directory)
+at its top level. The gate reads it statically and never runs it. In `files-kept-3`, a declared
+file may be gone from its old path only when its new path did not exist before and now holds
+exactly the same bytes. Every move is listed in the assertion's detail and in `result.json` under
+`migrated`. Any other removal, any changed byte, and a declared file that arrives changed or does
+not arrive all still fail. `read-3` still requires every baseline save to read back exactly as the
+baseline did. A malformed declaration fails as `harness`.
 
 ## Dispatch by hand
 

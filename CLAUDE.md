@@ -12,10 +12,11 @@ python-release-gates holds reusable GitHub Actions workflows that check whether 
 
 ## Build and run commands
 
-There is no build. The only CI check (`.github/workflows/check.yml`, on push to `main` and on PRs) is:
+There is no build. The CI check (`.github/workflows/check.yml`, job `compile`, on push to `main` and on PRs) runs:
 
 ```bash
 python -m py_compile gates/*.py scenarios/*.py
+python -m unittest discover -s tests   # tests/: the gate helpers (declared migrations)
 ```
 
 Each gate is a plain script driven by environment variables, so it can be run locally the same way the workflow runs it. Example (save-compatibility gate for tak, pip mode):
@@ -50,9 +51,9 @@ gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates 
 
 ## Test commands
 
-There is no unit test suite. Verification is:
+`tests/` holds unit tests for the gate helpers. Verification is:
 
-1. `python -m py_compile gates/*.py scenarios/*.py` (what CI runs).
+1. `python -m py_compile gates/*.py scenarios/*.py` and `python -m unittest discover -s tests` (what CI runs).
 2. A real local run of every gate a change touches, against a real candidate (as in the example above), with the `PASS`/`FAIL` assertion lines reported.
 
 ## Repository layout

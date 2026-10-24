@@ -11,7 +11,11 @@ library reports about DIR), `append DIR` (add one save next to the existing ones
   read-1, read-2      the candidate's view of the same directory equals the reference view
   files-kept-1, -2    every file is byte-identical after each read (reading changes nothing)
   append              the candidate adds a save beside the old ones
-  files-kept-3        every file the baseline wrote is still byte-identical
+  files-kept-3        every file the baseline wrote is still byte-identical — or, only for a file
+                      the scenario declares in SAVE_MIGRATIONS (a known, accepted layout move the
+                      candidate makes at launch), gone from its old path and present at its declared
+                      new path with exactly the same bytes; anything else moved, changed or removed
+                      still fails
   read-3              the candidate still reports every old save exactly as the reference
                       view did, plus the one it added
 
@@ -119,6 +123,65 @@ def digests(root: Path) -> dict[str, str]:
         rel = p.relative_to(root).as_posix()
         out[rel] = "dir" if p.is_dir() else hashlib.sha256(p.read_bytes()).hexdigest()
     return out
+
+
+class MigrationDeclarationError(ValueError):
+    pass
+
+
+def declared_migrations(scenario: Path) -> dict[str, str]:
+    """The scenario's `SAVE_MIGRATIONS = {"old/path": "new/path", ...}`, read statically (the file is
+    parsed, never imported or run, so neither version's code can widen it). Absent = {}. Paths are
+    relative to the save directory; anything but a plain dict of relative string paths is an error
+    (`harness`: the check cannot run as declared)."""
+    import ast
+    tree = ast.parse(scenario.read_text(), str(scenario))
+    found = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "SAVE_MIGRATIONS"
+                                                for t in node.targets):
+            found = node.value
+    if found is None:
+        return {}
+    try:
+        value = ast.literal_eval(found)
+    except ValueError as e:
+        raise MigrationDeclarationError(f"SAVE_MIGRATIONS is not a literal: {e}") from None
+    if not isinstance(value, dict):
+        raise MigrationDeclarationError("SAVE_MIGRATIONS must be a dict of old path -> new path")
+    for old, new in value.items():
+        for path in (old, new):
+            if (not isinstance(path, str) or not path or path.startswith("/") or "\\" in path
+                    or ".." in path.split("/")):
+                raise MigrationDeclarationError(f"SAVE_MIGRATIONS has an unsafe or empty path: {path!r}")
+        if old == new:
+            raise MigrationDeclarationError(f"SAVE_MIGRATIONS moves {old!r} onto itself")
+    if len(set(value.values())) != len(value):
+        raise MigrationDeclarationError("SAVE_MIGRATIONS moves two files onto one path")
+    return dict(value)
+
+
+def kept_after_append(written: dict, after: dict, migrations: dict) -> tuple[list[str], list[str]]:
+    """(problems, moves) for files-kept-3. Every baseline file must be byte-identical at its path,
+    except a declared migration's source, which may be gone only if its declared destination did not
+    exist before and now holds exactly the same bytes. A declared migration that did not happen is
+    no problem (the file is simply still where it was)."""
+    problems, moves = [], []
+    for k in sorted(set(written) | set(after)):
+        if k in written and k in after and written[k] != after[k]:
+            problems.append(f"changed {k}")
+        elif k in written and k not in after:
+            new = migrations.get(k)
+            if (new is not None and written[k] != "dir" and new not in written
+                    and after.get(new) == written[k]):
+                moves.append(f"{k} -> {new}")
+            elif new is not None:
+                problems.append(f"removed {k} (declared to move to {new}, which "
+                                + ("existed before" if new in written else
+                                   "is missing" if new not in after else "holds different bytes") + ")")
+            else:
+                problems.append(f"removed {k}")
+    return problems, moves
 
 
 def diff_files(before: dict, after: dict) -> list[str]:
@@ -330,9 +393,16 @@ def main() -> int:
         code, out = cand.run([str(scenario), "append", str(saves)])
         result.check("append", code == 0, "candidate added a save beside the baseline's" if code == 0 else tail(out))
         after = digests(saves)
-        changed = [d for d in diff_files(written, after) if not d.startswith("added ")]
+        try:
+            migrations = declared_migrations(scenario)
+        except (MigrationDeclarationError, SyntaxError) as e:
+            result.check("harness", False, f"{os.environ['SCENARIO']}: {e}")
+        changed, moves = kept_after_append(written, after, migrations)
+        result.doc["migrated"] = moves
+        added = len(set(after) - set(written)) - len(moves)
         result.check("files-kept-3", not changed,
-                     f"every baseline file byte-identical; added {len(set(after) - set(written))} path(s)"
+                     (f"every baseline file byte-identical; added {added} path(s)"
+                      + (f"; moved byte-identical by the declared migration: {', '.join(moves)}" if moves else ""))
                      if not changed else "; ".join(changed[:20]))
         code, final, out = view(cand, scenario, saves)
         ok = code == 0 and isinstance(final, dict) and isinstance(ref, dict)
