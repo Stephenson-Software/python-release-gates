@@ -161,6 +161,31 @@ readers report: `inspect_stage`, `has_clips`, every attribute and computed visib
 at every tick for a stage, and `validate_replay`, `replay_info` and `read_replay` for a
 replay.
 
+### Game scenarios (checkout mode)
+
+Four scenarios cover games that are run from a checkout. Each one **plays** the baseline: the
+game's own code runs its own menus or game loop, and every byte of every save is written by the
+game's own save code. Nothing is hand-written. A seeded bot,
+[`scenarios/menu_bot.py`](scenarios/menu_bot.py), stands in for the front-end of the menu-driven
+games. At every menu it picks an option the game offers and does not refuse, and it never quits,
+retires or deletes. Each written save directory carries a `provenance.json` that records the
+commit, version, Python and sessions played. A version's view of a save is what it reconstructs:
+the save is loaded by the version's own loader (any migration runs there) and written back by its
+own writer into a scratch place. The result is projected onto the keys of the file on disk, so a
+key the version drops shows as `"<dropped>"` and a key it adds is not held against it. Reads work
+on a copy, so they never touch the saves.
+
+| Scenario | Game | Saves | Run with |
+|---|---|---|---|
+| [`tak_game_saves.py`](scenarios/tak_game_saves.py) | the tak text adventures with one `save.json` per tak slot: [Tidewater](https://github.com/Stephenson-Software/Tidewater), [Overwinter](https://github.com/Stephenson-Software/Overwinter), [Night Ferry](https://github.com/Stephenson-Software/Night-Ferry) | `slot_N/save.json`, found through the game's own `SaveFileManager`; reconstructed by the game's own `load()` and `save()` (which also validates it against the reading version's `schemas/save.json`) | `source_root=src` |
+| [`fishe_saves.py`](scenarios/fishe_saves.py) | [FishE](https://github.com/Stephenson-Software/FishE) | `player.json`, `stats.json`, `timeService.json`, either flat in the data directory (2.x) or in `slot_N/` (since FishE moved onto tak); a slots version first moves a flat save into a slot, as it does at launch | `source_root=src`; also reads the `tak/fishe-2026-07-04` fixture |
+| [`cave_saves.py`](scenarios/cave_saves.py) | [Cave](https://github.com/Stephenson-Software/Cave-Console-Game) | one `savefile.txt` per installation, written by the game answered on stdin; the view is where the game resumes | `source_root=.` |
+| [`ophidian_saves.py`](scenarios/ophidian_saves.py) | [ophidian](https://github.com/Preponderous-Software/ophidian) | one `save.json` per installation (progress across runs and an obituary per run), written while the bot plays the text-UI game loop; a version from before `src/progression/save.py` keeps no saves | `source_root=src` |
+
+A slots-era FishE reading a flat 2.x save moves it into a slot when it launches. Because the
+`append` step launches the candidate, `files-kept-3` reports those files as removed. That is what
+upgrading from 2.x does to a player's data directory, and the gate does not pass it.
+
 ## Dispatch by hand
 
 ```

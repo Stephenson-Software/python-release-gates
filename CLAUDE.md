@@ -69,6 +69,11 @@ scenarios/                Per-library save scenarios: `write DIR`, `read DIR` (o
   trace_client_install_id.py  trace-client-python install-ID file (install_id_from_file)
   gardener_state.py       gardener's per-device state dir (run history, lists, cursor, hub store)
   usd_recorder_recordings.py  usd-recorder's .usda/.usdc recordings and usd-replay/1 replays
+  menu_bot.py             a seeded bot standing in for a menu-driven game's front-end (used by the game scenarios)
+  tak_game_saves.py       Tidewater / Overwinter / Night Ferry saves, played through the game (checkout mode)
+  fishe_saves.py          FishE saves, flat (2.x) and slotted layouts, played through the game (checkout mode)
+  cave_saves.py           Cave's savefile.txt, played on stdin (checkout mode, source_root .)
+  ophidian_saves.py       ophidian's save.json, played through its text-UI loop (checkout mode)
 .github/workflows/        tests.yml, consumers.yml, save-compat.yml (the gates) + check.yml (CI for this repo)
 ```
 
