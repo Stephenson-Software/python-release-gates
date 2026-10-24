@@ -54,6 +54,15 @@ for key, value in (("DO_NOT_TRACK", "1"), ("TRACE_USAGE_REPORTING", "off"),
     os.environ[key] = value
 
 FILES = ("player.json", "stats.json", "timeService.json")
+# The one layout move the gate accepts (files-kept-3): a slots-era FishE, launched by `append` over a
+# flat 2.x save, moves it into slot_1 (`migrate_old_save_files`). Accepted by the owner on
+# 2026-10-24 on these terms: each file must arrive at its new path byte-identical, and read-3 must
+# still report every value as the baseline did. Nothing else may move.
+SAVE_MIGRATIONS = {
+    "player.json": "slot_1/player.json",
+    "stats.json": "slot_1/stats.json",
+    "timeService.json": "slot_1/timeService.json",
+}
 LAYOUT = "slots" if os.path.isfile(os.path.join(SOURCE, "src", "saveFileManager.py")) else "flat"
 DROPPED = "<dropped>"
 ABSENT = "<absent>"

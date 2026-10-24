@@ -18,3 +18,5 @@ jobs:
           python-version: '3.12'
       - name: Every harness and scenario compiles
         run: python -m py_compile gates/*.py scenarios/*.py
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
