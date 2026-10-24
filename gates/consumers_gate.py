@@ -6,7 +6,8 @@ the gate. A consumer that already fails on its current pin is PRE-EXISTING: repo
 held against the candidate. A consumer whose requirements do not name the library (find_pin; PIN_SOURCES `all` also
 reads requirements*.txt and pyproject.toml dependencies) is SKIPPED.
 
-Assertions per consumer <Name> (the run stops at the first failure):
+Assertions per consumer <Name> (the run stops at the first failure; an unknown PIN_SOURCES
+fails first, as `harness`):
 
   control             the consumer could be cloned and installed at all (infrastructure if not)
   pin-<Name>          the library requirement line the consumer carries (informational)
@@ -100,14 +101,14 @@ def main() -> int:
     python = os.environ.get("PYTHON_VERSION", "").strip() or "3.12"
     command = os.environ.get("TEST_COMMAND", "").strip() or "python -m pytest -q"
     sources = os.environ.get("PIN_SOURCES", "").strip() or "requirements"
-    if sources not in ("requirements", "all"):
-        raise SystemExit(f"PIN_SOURCES must be `requirements` or `all`, not {sources!r}")
     consumers = []
     for line in env_list("CONSUMERS"):
         parts = line.split()
         consumers.append((parts[0], parts[1:]))
     result.doc.update({"distribution": distribution, "pythonVersion": python, "consumers": [], "preExisting": []})
     try:
+        if sources not in ("requirements", "all"):
+            result.check("harness", False, f"unknown pin_sources {sources!r} (requirements | all)")
         if not consumers:
             result.check("control", False, "no consumers given")
         for repo, extras in consumers:

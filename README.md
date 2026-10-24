@@ -81,7 +81,7 @@ Its suite is then run twice: once on the pin it carries today (`control-<Name>`)
 with the candidate installed over it (`install-<Name>`, `candidate-<Name>`). A consumer whose
 requirements do not name the library is skipped (`pin-<Name>` says so). An empty consumer
 list, a consumer that cannot be cloned, or one whose own requirements do not install fails as
-`control`: the check could not run.
+`control`: the check could not run. An unknown `pin_sources` fails as `harness`.
 
 ## Save-compatibility gate
 
