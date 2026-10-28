@@ -1,9 +1,11 @@
 """Shared harness pieces: the result document, subprocess steps, virtualenvs.
 
-Every gate writes one `result.json` — `{gate, repository, sha, candidateSha, passed,
+Every gate writes one `result.json` — `{gate, repository, sha, candidateSha, complete, passed,
 assertions: [{name, passed, detail}], ...}` — and stops at the first assertion that does not
 hold. The file is written on every outcome, including a harness crash, so a caller never has
-to parse a log.
+to parse a log. It is also rewritten after every assertion, so `complete` stays false and
+`passed` stays false until the gate finishes (or crashes): a run cancelled, timed out or
+killed part-way leaves a file that never reads as a pass.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ class Result:
     def __init__(self, gate: str, repository: str, sha: str, path: str):
         self.path = Path(path)
         self.doc = {"gate": gate, "repository": repository, "sha": sha, "candidateSha": sha,
-                    "passed": False, "assertions": []}
+                    "complete": False, "passed": False, "assertions": []}
 
     def check(self, name: str, ok: bool, detail: str = "", stop: bool = True) -> bool:
         self.doc["assertions"].append({"name": name, "passed": bool(ok), "detail": detail})
@@ -37,19 +39,23 @@ class Result:
             raise Stop(name)
         return ok
 
-    def write(self) -> None:
-        self.doc["passed"] = bool(self.doc["assertions"]) and all(a["passed"] for a in self.doc["assertions"])
+    def write(self, final: bool = False) -> None:
+        """Only the final write (`finish`/`crash`) may record a pass; until then the run is unfinished."""
+        if final:
+            self.doc["complete"] = True
+        self.doc["passed"] = (self.doc["complete"] and bool(self.doc["assertions"])
+                              and all(a["passed"] for a in self.doc["assertions"]))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.doc, indent=2) + "\n")
 
     def finish(self) -> int:
-        self.write()
+        self.write(final=True)
         return 0 if self.doc["passed"] else 1
 
     def crash(self, e: BaseException) -> int:
         """A harness bug or an unusable environment: never a verdict on the candidate."""
         self.doc["assertions"].append({"name": "harness", "passed": False, "detail": f"{type(e).__name__}: {e}"})
-        self.write()
+        self.write(final=True)
         return 1
 
 

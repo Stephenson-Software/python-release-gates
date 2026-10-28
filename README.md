@@ -28,8 +28,15 @@ named `<repository> @ <sha>` so a dispatched run can be found again.
 
 ```json
 {"gate": "tests", "repository": "owner/repo", "sha": "<candidate>", "candidateSha": "<candidate>",
- "passed": true, "assertions": [{"name": "tests-3.12", "passed": true, "detail": "259 passed in 4.1s"}]}
+ "complete": true, "passed": true,
+ "assertions": [{"name": "tests-3.12", "passed": true, "detail": "259 passed in 4.1s"}]}
 ```
+
+The file is rewritten after every assertion. `complete` turns true only when the gate finishes,
+whether it passes, stops at a failing assertion or crashes. `passed` is never true while
+`complete` is false, so a run that is cancelled, times out or is killed part-way leaves a
+`result.json` with `"complete": false, "passed": false` and the assertions recorded up to that
+point. The run summary reports such a run as `DID NOT FINISH`.
 
 `candidateSha` is the commit the gate verified. The tests gate checks it against the checkout's
 `HEAD`. The consumers gate and the save-compatibility gate in `pip` mode check it against the
@@ -46,7 +53,7 @@ candidate.
 | 3600 s per test suite | the tests gate's `test_command`, and each consumers-gate suite run | the same, with `timed out after 3600s`. A consumer whose suite times out on its current pin counts as red there, so it is reported as pre-existing |
 | 60 s | the save-compatibility gate's `fixture_manifest_url` download | the download fails, so the gate fails as `fixture`. The fixture archive itself has no timeout of its own |
 | one retry | every `pip install` of a candidate, a baseline or a consumer's requirements | a failed install, including one that timed out, is run once more before its assertion fails. Nothing else is retried |
-| 60 / 90 / 30 min per job | `tests.yml` / `consumers.yml` / `save-compat.yml` (`timeout-minutes`) | GitHub cancels the job. The summary and artifact steps still run, but `result.json` holds only the assertions recorded before the cancellation, with no failing one for the step that was cut off, so read the job's conclusion as well ([#8](https://github.com/Stephenson-Software/python-release-gates/issues/8)) |
+| 60 / 90 / 30 min per job | `tests.yml` / `consumers.yml` / `save-compat.yml` (`timeout-minutes`) | GitHub cancels the job. The summary and artifact steps still run. `result.json` holds only the assertions recorded before the cancellation, with no failing one for the step that was cut off, and reads `"complete": false, "passed": false` |
 
 ## Tests gate
 
