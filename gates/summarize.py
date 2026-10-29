@@ -9,7 +9,11 @@ if not os.path.exists(path):
     print(f"## {title} — no result written (the harness did not run)")
     raise SystemExit
 r = json.load(open(path))
-print(f"## {title} — {'PASSED' if r.get('passed') else 'FAILED'}")
+if not r.get("complete", True):  # a result.json written before `complete` existed has no key
+    verdict = "DID NOT FINISH (cancelled, timed out or killed; the assertions below are partial)"
+else:
+    verdict = "PASSED" if r.get("passed") else "FAILED"
+print(f"## {title} — {verdict}")
 print(f"`{r.get('repository')}` @ `{r.get('sha')}`\n")
 print("| assertion | result | detail |\n|---|---|---|")
 for a in r.get("assertions") or []:
