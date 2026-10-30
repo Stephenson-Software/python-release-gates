@@ -16,6 +16,7 @@ INSTALL_EXTRAS, TEST_COMMAND, EXPECTED_VERSION, WORK, RESULT_PATH.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -34,6 +35,31 @@ def declared_version(src: Path) -> str:
         return ""
     v = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', m.group(1), re.M)
     return v.group(1) if v else ""
+
+
+PROBE_TAG = "prg-import-probe "
+
+
+def import_probe(package: str) -> str:
+    """Python that imports `package` and prints one tagged line: [its directory, its __version__ or '']."""
+    return (f"import json, os, {package}; "
+            f"print({PROBE_TAG!r} + json.dumps([os.path.dirname({package}.__file__), "
+            f"str(getattr({package}, '__version__', ''))]))")
+
+
+def parse_probe(output: str) -> tuple[str, str]:
+    """(directory, version) from the last tagged probe line, or ("", "") when there is none.
+
+    The tag keeps an empty `__version__` and anything the import writes around it (stderr
+    follows stdout in `run()`'s output) from being read as the result."""
+    for line in reversed(output.splitlines()):
+        if line.startswith(PROBE_TAG):
+            try:
+                where, ver = json.loads(line[len(PROBE_TAG):])
+            except (ValueError, TypeError):
+                return "", ""
+            return str(where), str(ver)
+    return "", ""
 
 
 def main() -> int:
@@ -60,12 +86,8 @@ def main() -> int:
             code, out = pip_install(interp, [spec, "pytest"], cwd=src)
             result.check(f"install-{py}", code == 0, f"pip install {spec}" + ("" if code == 0 else f": {tail(out)}"))
             if package:
-                probe = (f"import {package}, os; "
-                         f"print(os.path.dirname({package}.__file__)); "
-                         f"print(getattr({package}, '__version__', ''))")
-                code, out = run([str(interp), "-c", probe], cwd=work)
-                lines = out.strip().splitlines()
-                where, ver = (lines[-2], lines[-1]) if len(lines) >= 2 else ("", "")
+                code, out = run([str(interp), "-c", import_probe(package)], cwd=work)
+                where, ver = parse_probe(out)
                 ok = code == 0 and "site-packages" in where and (not expected or not ver or ver == expected)
                 detail = (f"{package} {ver or '(no __version__)'} from {where}" if code == 0
                           else f"import failed: {tail(out)}")
