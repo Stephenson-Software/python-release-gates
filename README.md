@@ -36,7 +36,9 @@ The file is rewritten after every assertion. `complete` turns true only when the
 whether it passes, stops at a failing assertion or crashes. `passed` is never true while
 `complete` is false, so a run that is cancelled, times out or is killed part-way leaves a
 `result.json` with `"complete": false, "passed": false` and the assertions recorded up to that
-point. The run summary reports such a run as `DID NOT FINISH`.
+point. The run summary reports such a run as `DID NOT FINISH`. `complete` is not in a tag yet
+(see [Tags](#tags)), so a run from `v5` or earlier has no such key, and a killed run can leave
+`"passed": true`.
 
 `candidateSha` is the commit the gate verified. The tests gate checks it against the checkout's
 `HEAD`. The consumers gate and the save-compatibility gate in `pip` mode check it against the
@@ -63,7 +65,7 @@ candidate.
 | `package` | `""` | import name; when set, the package must import from `site-packages` and its `__version__` (if any) must equal `expected_version` |
 | `python_versions` | `3.12` | comma-separated interpreters |
 | `install_extras` | `dev` | extras installed with the package |
-| `test_command` | `python -m pytest -q` | run in the checkout; a leading `python` is the gate's virtualenv |
+| `test_command` | `python -m pytest -q` | run in the checkout; a leading `python` or `python3` is the gate's virtualenv |
 | `expected_version` | `""` | the `[project] version` pyproject.toml must declare |
 
 Assertions: `checkout`, `version` (only when `expected_version` is set), then for each
@@ -77,7 +79,7 @@ interpreter `install-<py>`, `import-<py>` (only when `package` is set), `tests-<
 | `consumers` | — | one per line (or comma-separated): `owner/repo [extra pip package …]`, e.g. `Stephenson-Software/FishE pygame` |
 | `distribution` | repository name | the name the consumers' `requirements.txt` uses |
 | `python_version` | `3.12` | interpreter for every consumer |
-| `test_command` | `python -m pytest -q` | run in each consumer's checkout |
+| `test_command` | `python -m pytest -q` | run in each consumer's checkout; a leading `python` or `python3` is that consumer's virtualenv |
 | `pin_sources` | `requirements` | where a consumer's pin is looked for: `requirements` = `requirements.txt` only; `all` (v3) = `requirements.txt`, then any other `requirements*.txt`, then `pyproject.toml` `[project]` dependencies and optional-dependencies |
 
 For each consumer, its default branch is cloned and installed the way its pin is: its own
@@ -185,7 +187,7 @@ on a copy, so they never touch the saves.
 | Scenario | Game | Saves | Run with |
 |---|---|---|---|
 | [`tak_game_saves.py`](scenarios/tak_game_saves.py) | the tak text adventures with one `save.json` per tak slot: [Tidewater](https://github.com/Stephenson-Software/Tidewater), [Overwinter](https://github.com/Stephenson-Software/Overwinter), [Night Ferry](https://github.com/Stephenson-Software/Night-Ferry) | `slot_N/save.json`, found through the game's own `SaveFileManager`; reconstructed by the game's own `load()` and `save()` (which also validates it against the reading version's `schemas/save.json`) | `source_root=src` |
-| [`fishe_saves.py`](scenarios/fishe_saves.py) | [FishE](https://github.com/Stephenson-Software/FishE) | `player.json`, `stats.json`, `timeService.json`, either flat in the data directory (2.x) or in `slot_N/` (since FishE moved onto tak); a slots version first moves a flat save into a slot, as it does at launch | `source_root=src`; also reads the `tak/fishe-2026-07-04` fixture |
+| [`fishe_saves.py`](scenarios/fishe_saves.py) | [FishE](https://github.com/Stephenson-Software/FishE) | `player.json`, `stats.json`, `timeService.json`, either flat in the data directory (2.x) or in `slot_N/` (since FishE moved onto tak); a slots version first moves a flat save into a slot, as it does at launch | `source_root=src`; also reads the `tak/fishe-2026-07-04` fixture; a flat baseline needs `v5` or later (see `SAVE_MIGRATIONS` below) |
 | [`cave_saves.py`](scenarios/cave_saves.py) | [Cave](https://github.com/Stephenson-Software/Cave-Console-Game) | one `savefile.txt` per installation, written by the game answered on stdin; the view is where the game resumes | `source_root=.` |
 | [`ophidian_saves.py`](scenarios/ophidian_saves.py) | [ophidian](https://github.com/Preponderous-Software/ophidian) | one `save.json` per installation (progress across runs and an obituary per run), written while the bot plays the text-UI game loop; a version from before `src/progression/save.py` keeps no saves | `source_root=src` |
 
@@ -197,8 +199,8 @@ SAVE_MIGRATIONS = {"player.json": "slot_1/player.json", "stats.json": "slot_1/st
                    "timeService.json": "slot_1/timeService.json"}
 ```
 
-A scenario may declare `SAVE_MIGRATIONS = {old path: new path}` (relative to the save directory)
-at its top level. The gate reads it statically and never runs it. In `files-kept-3`, a declared
+From `v5`, a scenario may declare `SAVE_MIGRATIONS = {old path: new path}` (relative to the save
+directory) at its top level. The gate reads it statically and never runs it. In `files-kept-3`, a declared
 file may be gone from its old path only when its new path did not exist before and now holds
 exactly the same bytes. Every move is listed in the assertion's detail and in `result.json` under
 `migrated`. Any other removal, any changed byte, and a declared file that arrives changed or does
@@ -220,19 +222,34 @@ gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates 
 ```
 
 ```
-gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
+gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v5 \
   -f repository=Stephenson-Software/gardener -f sha=<commit> -f baseline_ref=v0.4.7 \
   -f scenario=scenarios/gardener_state.py -f distribution=gardener
 ```
 
 ```
-gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v2 \
+gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v5 \
   -f repository=Preponderous-Software/usd-recorder -f sha=<commit> -f baseline_ref=v0.2.0 \
   -f scenario=scenarios/usd_recorder_recordings.py -f distribution=usd-recorder
 ```
 
 Reference a tag, never a branch, so that a change here cannot alter a check already in
 progress.
+
+## Tags
+
+The gate that runs is the one in the tag given to `--ref` or to `uses:`, with that tag's
+scenarios. A scenario or an input the tag does not hold cannot be used: a scenario missing from
+it fails as `harness`. Each tag holds everything in the tags before it.
+
+| Tag | Adds |
+|---|---|
+| `v1` | the three gates, optional fixtures, `tak_slots.py` |
+| `v2` | `install_mode`, `source_root`, `fidelity` blocks, `roam_saves.py` |
+| `v3` | `pin_sources`, `gardener_state.py`, `trace_client_install_id.py`, `usd_recorder_recordings.py` |
+| `v4` | `tak_game_saves.py`, `fishe_saves.py`, `cave_saves.py`, `ophidian_saves.py`, `menu_bot.py`; an unknown `pin_sources` fails as `harness` with a `result.json` (before, the gate exited with none) |
+| `v5` | `SAVE_MIGRATIONS`, declared by `fishe_saves.py` |
+| not in a tag yet | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails) |
 
 ## License
 
