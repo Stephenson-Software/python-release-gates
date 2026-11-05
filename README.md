@@ -88,7 +88,9 @@ pin (`requirements-record.txt`, say), or the consumer itself (`pip install -e .[
 the pin is a `pyproject.toml` dependency or extra.
 Its suite is then run twice: once on the pin it carries today (`control-<Name>`) and once
 with the candidate installed over it (`install-<Name>`, `candidate-<Name>`). A consumer whose
-requirements do not name the library is skipped (`pin-<Name>` says so). An empty consumer
+requirements do not name the library is skipped (`pin-<Name>` says so). A requirement names
+the library by its distribution name or by the whole repository URL, so
+`owner/tak-client` is not a pin of `owner/tak`. An empty consumer
 list, a consumer that cannot be cloned, or one whose own requirements do not install fails as
 `control`: the check could not run. An unknown `pin_sources` fails as `harness`.
 
@@ -98,7 +100,7 @@ list, a consumer that cannot be cloned, or one whose own requirements do not ins
 |---|---|---|
 | `repository`, `sha` | — | the candidate |
 | `baseline_ref` | — | the release the saves are written with (a tag) |
-| `scenario` | — | a script in [`scenarios/`](scenarios) that drives the library's save API: `write DIR`, `read DIR` (one JSON line), `append DIR` |
+| `scenario` | — | a script in [`scenarios/`](scenarios) that drives the library's save API: `write DIR`, `read DIR` (one line holding a JSON object; the last such line in the output is the view, so a warning around it is ignored), `append DIR` |
 | `distribution` | repository name | pip distribution name |
 | `python_version` | `3.12` | interpreter for both versions |
 | `fixture_url` | `""` | optional curated saves (a `.tar.gz` of a save directory) read by both versions |
@@ -249,7 +251,7 @@ it fails as `harness`. Each tag holds everything in the tags before it.
 | `v3` | `pin_sources`, `gardener_state.py`, `trace_client_install_id.py`, `usd_recorder_recordings.py` |
 | `v4` | `tak_game_saves.py`, `fishe_saves.py`, `cave_saves.py`, `ophidian_saves.py`, `menu_bot.py`; an unknown `pin_sources` fails as `harness` with a `result.json` (before, the gate exited with none) |
 | `v5` | `SAVE_MIGRATIONS`, declared by `fishe_saves.py` |
-| not in a tag yet | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails) |
+| not in a tag yet | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails); stderr after a scenario's JSON line no longer fails the read (in `v5` and earlier it does); a URL pin must name the repository whole, so `owner/tak-client` no longer pins `owner/tak` (in `v5` and earlier the consumer is tested, not skipped) |
 
 ## License
 

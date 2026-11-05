@@ -1,8 +1,9 @@
 """Save-compatibility gate: data the baseline release wrote, read by the candidate.
 
 A scenario script (SCENARIO, a path in this repository) drives the library's own save API in
-three modes — `write DIR` (lay down saves), `read DIR` (print, as JSON, everything the
-library reports about DIR), `append DIR` (add one save next to the existing ones). The gate:
+three modes — `write DIR` (lay down saves), `read DIR` (print, as one line of JSON holding an
+object, everything the library reports about DIR; other output around that line, such as a
+warning on stderr, is ignored), `append DIR` (add one save next to the existing ones). The gate:
 
   baseline-install    the baseline ref installs (a baseline failure: nothing to compare with)
   candidate-install   the candidate commit installs, and pip records exactly that commit
@@ -60,6 +61,7 @@ import sys
 import tarfile
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import Result, Stop, git_url, installed_commit, make_venv, pip_install, pip_spec, run, tail  # noqa: E402
@@ -196,14 +198,27 @@ def diff_files(before: dict, after: dict) -> list[str]:
     return lines
 
 
+def parse_view(output: str) -> Optional[dict]:
+    """The last line of a scenario's output that is a JSON object, or None when there is none.
+
+    Stderr follows stdout in `run()`'s output, so a warning the library logs must not be read as
+    the view. Anything else that parses (a list, a number) is not a view and is passed over."""
+    for line in reversed(output.splitlines()):
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 def view(side: Side, scenario: Path, saves: Path, mode: str = "read", env: dict = None) -> tuple[int, object, str]:
     code, out = side.run([str(scenario), mode, str(saves)], extra_env=env)
     if code != 0:
         return code, None, out
-    try:
-        return 0, json.loads(out.strip().splitlines()[-1]), out
-    except (json.JSONDecodeError, IndexError):
-        return 1, None, out
+    parsed = parse_view(out)
+    return (0, parsed, out) if parsed is not None else (1, None, out)
 
 
 def first_difference(a: object, b: object, path: str = "") -> str:

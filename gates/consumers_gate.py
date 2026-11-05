@@ -34,12 +34,18 @@ from common import (Result, Stop, env_list, git_url, installed_commit, make_venv
                     pip_spec, pytest_summary, run, tail)
 
 
+def _names_url(spec: str, url: str) -> bool:
+    """`url` appears in `spec` as a whole repository URL, not as the start of a longer name:
+    it ends at the end of the spec or at `@ # / ? ;` or whitespace, with or without `.git`."""
+    return re.search(re.escape(url) + r"(?:\.git)?(?=$|[@#/?;\s])", spec.lower()) is not None
+
+
 def _names_library(spec: str, url: str, distribution: str) -> bool:
     s = spec.strip()
     if not s or s.startswith(("#", "-")):
         return False
     name = re.split(r"[\s<>=!~@\[;]", s, 1)[0].lower().replace("_", "-")
-    return url in s.lower() or name == distribution.lower().replace("_", "-")
+    return _names_url(s, url) or name == distribution.lower().replace("_", "-")
 
 
 def find_pin(consumer: Path, repository: str, distribution: str,
