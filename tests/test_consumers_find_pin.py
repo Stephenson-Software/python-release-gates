@@ -44,6 +44,27 @@ class RequirementsTxt(unittest.TestCase):
     def test_a_name_that_only_starts_with_the_distribution_is_not_a_pin(self):
         self.assertEqual(find_pin(requirements("takeover==1.0\ntak-extras\n"), REPO, "tak"), NOTHING)
 
+    def test_a_url_that_only_starts_with_the_repository_is_not_a_pin(self):
+        for line in ("trace-client @ git+https://github.com/Stephenson-Software/tak-client-python@v1",
+                     "git+https://github.com/Stephenson-Software/takeover#egg=takeover",
+                     "other @ https://github.com/Stephenson-Software/tak.py/archive/main.zip",
+                     "other @ git+https://github.com/Stephenson-Software/tak.git-extras@v1"):
+            with self.subTest(line=line):
+                self.assertEqual(find_pin(requirements(line + "\n"), REPO, "tak"), NOTHING)
+
+    def test_every_end_of_the_repository_url_is_a_pin(self):
+        for line in ("other @ git+https://github.com/Stephenson-Software/tak",
+                     "other @ git+https://github.com/Stephenson-Software/tak@v0.2.0",
+                     "other @ git+https://github.com/Stephenson-Software/tak.git",
+                     "other @ git+https://github.com/Stephenson-Software/tak.git@v0.2.0",
+                     "git+https://github.com/Stephenson-Software/tak#egg=other",
+                     "other @ https://github.com/Stephenson-Software/tak/archive/v0.2.0.zip",
+                     "other @ https://github.com/Stephenson-Software/tak?x=1",
+                     "other @ https://github.com/Stephenson-Software/tak ; python_version >= '3.10'",
+                     "other @ https://github.com/Stephenson-Software/tak; python_version >= '3.10'"):
+            with self.subTest(line=line):
+                self.assertEqual(find_pin(requirements(line + "\n"), REPO, "tak")[0], line)
+
     def test_comments_and_option_lines_are_not_pins(self):
         self.assertEqual(find_pin(requirements("# tak==0.2.0\n-r tak.txt\n--index-url x\n\n"), REPO, "tak"),
                          NOTHING)
