@@ -47,6 +47,14 @@ commit pip recorded for the installed copy (PEP 610). The save-compatibility gat
 `harness` or `control` means the check could not be run at all. It is never a verdict on the
 candidate.
 
+Each gate adds its own keys beside these, set as far as the run got:
+
+| Gate | Keys |
+|---|---|
+| tests | `package`, `pythonVersions`, `version` (what pyproject.toml declares), `tests` (`{<py>: {exit, summary}}`) |
+| consumers | `distribution`, `pythonVersion`, `consumers` (one entry per consumer: `repository`, `name`, `sha`, `pin`, `pinnedIn`, `pre_existing`, `skipped`, `control`, `candidate`), `preExisting` (names) |
+| save-compat | `baselineRef`, `baselineSha`, `scenario`, `pythonVersion`, `installMode`, `files`, `baselineView`, `candidateView`, `migrated`, `fixture` (`{url, manifestUrl, manifest, files}`, only with a fixture) |
+
 ## Time limits and retries
 
 | Limit | Where | What happens when it is reached |
@@ -92,7 +100,14 @@ requirements do not name the library is skipped (`pin-<Name>` says so). A requir
 the library by its distribution name or by the whole repository URL, so
 `owner/tak-client` is not a pin of `owner/tak`. An empty consumer
 list, a consumer that cannot be cloned, or one whose own requirements do not install fails as
-`control`: the check could not run. An unknown `pin_sources` fails as `harness`.
+`control`: the check could not run. An unknown `pin_sources` fails as `harness`. A run in which
+every consumer is skipped has tested nothing and still passes.
+
+Assertions, for each consumer: `pin-<Name>` (passes whether the pin was found or the consumer is
+skipped), `control-<Name>` (always passes; its detail says whether the suite was green, and a red
+suite marks the consumer pre-existing), `install-<Name>`, `candidate-<Name>` (passes for a
+pre-existing consumer whatever the suite does). `control` and `harness` are recorded only when
+they fail. `pytest`, `pytest-cov` and the consumer's extra pip packages are installed with it.
 
 ## Save-compatibility gate
 
@@ -128,6 +143,9 @@ taken from the save view:
  "recordedAt": "2026-09-26T00:00:00Z", "primaryFile": "save.json",
  "expected": {"saves": 5, "unreadable": 3, "valid": 1, "next_slot": 3}}
 ```
+
+`expected` may hold any of those four counts, and each one given must equal what the baseline's
+view reports. `primaryFile`, when given, is passed to the scenario as `TAK_PRIMARY_FILE`.
 
 [`scenarios/tak_slots.py`](scenarios/tak_slots.py) covers tak's save **slot** layer:
 numbered slot directories, the listing and metadata the save menu shows, damaged and empty
@@ -251,7 +269,7 @@ it fails as `harness`. Each tag holds everything in the tags before it.
 | `v3` | `pin_sources`, `gardener_state.py`, `trace_client_install_id.py`, `usd_recorder_recordings.py` |
 | `v4` | `tak_game_saves.py`, `fishe_saves.py`, `cave_saves.py`, `ophidian_saves.py`, `menu_bot.py`; an unknown `pin_sources` fails as `harness` with a `result.json` (before, the gate exited with none) |
 | `v5` | `SAVE_MIGRATIONS`, declared by `fishe_saves.py` |
-| not in a tag yet | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails); stderr after a scenario's JSON line no longer fails the read (in `v5` and earlier it does); a URL pin must name the repository whole, so `owner/tak-client` no longer pins `owner/tak` (in `v5` and earlier the consumer is tested, not skipped) |
+| not in a tag yet | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails); stderr after a scenario's JSON line no longer fails the read (in `v5` and earlier it does); a view must be a JSON object (in `v5` and earlier any JSON on the last line is taken as the view); a URL pin must name the repository whole, so `owner/tak-client` no longer pins `owner/tak` (in `v5` and earlier the consumer is tested, not skipped) |
 
 ## License
 
