@@ -129,7 +129,9 @@ With a fixture the gate also checks `fixture`, `fixture-baseline`, `fixture-expe
 when the manifest gives `expected` counts), `fixture-read-1`, `fixture-files-kept-1`,
 `fixture-read-2` and `fixture-files-kept-2`.
 A failure in any of them means saves may not survive the upgrade. A fixture that was asked
-for but cannot be downloaded or unpacked fails the gate. It is never skipped. A manifest
+for but cannot be downloaded or unpacked fails the gate. It is never skipped. A baseline
+write or a fixture archive that leaves only directories, with no file in them, fails as
+`baseline-write` or `fixture`: an empty directory is not a save. A manifest
 given without a fixture fails as `fixture`. A scenario that is not a file in this repository
 or an unknown `install_mode` fails as `harness`. The artifact also holds the `saves/`
 directory the baseline wrote and the candidate appended to.

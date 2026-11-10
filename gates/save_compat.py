@@ -7,7 +7,8 @@ warning on stderr, is ignored), `append DIR` (add one save next to the existing 
 
   baseline-install    the baseline ref installs (a baseline failure: nothing to compare with)
   candidate-install   the candidate commit installs, and pip records exactly that commit
-  baseline-write      the baseline writes the scenario's saves
+  baseline-write      the baseline writes the scenario's saves: at least one file (directories
+                      alone are not saves)
   baseline-read       the baseline reads them back — the reference view
   read-1, read-2      the candidate's view of the same directory equals the reference view
   files-kept-1, -2    every file is byte-identical after each read (reading changes nothing)
@@ -25,8 +26,9 @@ FIXTURE_MANIFEST_URL in the plugin-fixtures shape — `{library, slug, version, 
 recordedAt, primaryFile?, expected: {saves, unreadable, valid, next_slot}}`), the same
 directory is also read by both versions:
 
-  fixture             the archive (and manifest, when given) downloads and unpacks; a fixture
-                      that was asked for and cannot be read BLOCKS — it is never skipped
+  fixture             the archive (and manifest, when given) downloads and unpacks to at least
+                      one file; a fixture that was asked for and cannot be read BLOCKS — it is
+                      never skipped
   fixture-baseline    the baseline reads it — the reference view
   fixture-expected    the reference view carries the manifest's `expected` counts
   fixture-read-1, -2  the candidate's view equals the reference view
@@ -125,6 +127,11 @@ def digests(root: Path) -> dict[str, str]:
         rel = p.relative_to(root).as_posix()
         out[rel] = "dir" if p.is_dir() else hashlib.sha256(p.read_bytes()).hexdigest()
     return out
+
+
+def file_count(d: dict[str, str]) -> int:
+    """How many entries of a digests() map are files: directories alone are not saves."""
+    return sum(1 for v in d.values() if v != "dir")
 
 
 class MigrationDeclarationError(ValueError):
@@ -318,8 +325,8 @@ def fixture_phase(result: Result, base: Side, cand: Side, scenario: Path, work: 
         result.check("fixture", False, f"{url}: {type(e).__name__}: {e}")
     before = digests(fx)
     result.doc["fixture"] = {"url": url, "manifestUrl": manifest_url or None, "manifest": manifest or None,
-                             "files": len([v for v in before.values() if v != "dir"])}
-    result.check("fixture", bool(before), f"{result.doc['fixture']['files']} file(s) unpacked"
+                             "files": file_count(before)}
+    result.check("fixture", file_count(before) > 0,f"{result.doc['fixture']['files']} file(s) unpacked"
                  + (f"; manifest {manifest.get('slug')}/{manifest.get('version')}" if manifest else ""))
     env = {}
     if manifest.get("primaryFile"):
@@ -389,8 +396,8 @@ def main() -> int:
         saves.mkdir(parents=True, exist_ok=True)
         code, out = base.run([str(scenario), "write", str(saves)])
         written = digests(saves)
-        result.doc["files"] = len([v for v in written.values() if v != "dir"])
-        result.check("baseline-write", code == 0 and bool(written),
+        result.doc["files"] = file_count(written)
+        result.check("baseline-write", code == 0 and result.doc["files"] > 0,
                      f"{result.doc['files']} file(s) written by {baseline_ref}" if code == 0 else tail(out))
         code, ref, out = view(base, scenario, saves)
         result.check("baseline-read", code == 0 and ref is not None and digests(saves) == written,
