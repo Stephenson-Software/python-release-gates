@@ -30,10 +30,11 @@ from common import Result, Stop, env_list, make_venv, pip_install, pytest_summar
 def declared_version(src: Path) -> str:
     """`[project] version` from pyproject.toml ('' when dynamic or absent)."""
     text = (src / "pyproject.toml").read_text() if (src / "pyproject.toml").exists() else ""
-    m = re.search(r"^\[project\]\s*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    # The header may carry a trailing comment and the key may be indented; both are valid TOML.
+    m = re.search(r"^\[project\][ \t]*(?:#[^\n]*)?$(.*?)(?=^\[|\Z)", text, re.M | re.S)
     if not m:
         return ""
-    v = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', m.group(1), re.M)
+    v = re.search(r'^[ \t]*version\s*=\s*["\']([^"\']+)["\']', m.group(1), re.M)
     return v.group(1) if v else ""
 
 
