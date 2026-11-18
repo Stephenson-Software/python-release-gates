@@ -58,6 +58,18 @@ class DeclaredVersion(unittest.TestCase):
         src = src_with('[project]\nname = "tak"\nversion_scheme = "x"\nversion = "1.0.0"\n')
         self.assertEqual(declared_version(src), "1.0.0")
 
+    def test_indented_version_key_is_read(self):
+        src = src_with('[project]\n  name = "tak"\n  version = "1.0.0"\n')
+        self.assertEqual(declared_version(src), "1.0.0")
+
+    def test_comment_after_project_header_is_allowed(self):
+        src = src_with('[project]  # package metadata\nname = "tak"\nversion = "1.0.0"\n')
+        self.assertEqual(declared_version(src), "1.0.0")
+
+    def test_commented_out_version_is_not_read(self):
+        src = src_with('[project]\nname = "tak"\n# version = "6.6.6"\ndynamic = ["version"]\n')
+        self.assertEqual(declared_version(src), "")
+
 
 if __name__ == "__main__":
     unittest.main()
