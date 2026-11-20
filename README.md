@@ -36,7 +36,7 @@ The file is rewritten after every assertion. `complete` turns true only when the
 whether it passes, stops at a failing assertion or crashes. `passed` is never true while
 `complete` is false, so a run that is cancelled, times out or is killed part-way leaves a
 `result.json` with `"complete": false, "passed": false` and the assertions recorded up to that
-point. The run summary reports such a run as `DID NOT FINISH`. `complete` is not in a tag yet
+point. The run summary reports such a run as `DID NOT FINISH`. `complete` arrived in `v6`
 (see [Tags](#tags)), so a run from `v5` or earlier has no such key, and a killed run can leave
 `"passed": true`.
 
@@ -271,7 +271,7 @@ it fails as `harness`. Each tag holds everything in the tags before it.
 | `v3` | `pin_sources`, `gardener_state.py`, `trace_client_install_id.py`, `usd_recorder_recordings.py` |
 | `v4` | `tak_game_saves.py`, `fishe_saves.py`, `cave_saves.py`, `ophidian_saves.py`, `menu_bot.py`; an unknown `pin_sources` fails as `harness` with a `result.json` (before, the gate exited with none) |
 | `v5` | `SAVE_MIGRATIONS`, declared by `fishe_saves.py` |
-| not in a tag yet | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails); stderr after a scenario's JSON line no longer fails the read (in `v5` and earlier it does); a view must be a JSON object (in `v5` and earlier any JSON on the last line is taken as the view); a URL pin must name the repository whole, so `owner/tak-client` no longer pins `owner/tak` (in `v5` and earlier the consumer is tested, not skipped) |
+| `v6` | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails); stderr after a scenario's JSON line no longer fails the read (in `v5` and earlier it does); a view must be a JSON object (in `v5` and earlier any JSON on the last line is taken as the view); a URL pin must name the repository whole, so `owner/tak-client` no longer pins `owner/tak` (in `v5` and earlier the consumer is tested, not skipped); a baseline write or fixture that leaves only directories fails `baseline-write` or `fixture` (in `v5` and earlier it passes with `0 file(s)`); an indented `version` key, or a comment after the `[project]` header, is read by the `version` check (in `v5` and earlier it reads as none, so `version` fails); the gate jobs run on `ubuntu-24.04`, where Python 3.8 and 3.9 can be set up (in `v5` and earlier they run on `ubuntu-latest`, which no longer has them) |
 
 ## License
 
