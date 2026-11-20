@@ -63,7 +63,10 @@ concurrency:
 jobs:
   tests:
     name: ${{ inputs.repository }} @ ${{ inputs.sha }}
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not ubuntu-latest: ubuntu-latest became 26.04 (from 2026-10-19), where
+    # actions/setup-python has no 3.8 or 3.9 build, and a library's or consumer's floor can be 3.8
+    # (tak's tests gate run 44679704474 failed at "Set up Python": 3.8 not found). Job names are unchanged.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout gates
