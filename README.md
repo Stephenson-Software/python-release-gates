@@ -74,7 +74,7 @@ Each gate adds its own keys beside these, set as far as the run got:
 | `python_versions` | `3.12` | comma-separated interpreters |
 | `install_extras` | `dev` | extras installed with the package |
 | `test_command` | `python -m pytest -q` | run in the checkout; a leading `python` or `python3` is the gate's virtualenv |
-| `expected_version` | `""` | the `[project] version` pyproject.toml must declare |
+| `expected_version` | `""` | the `[project] version` pyproject.toml must declare. When pyproject.toml's version is dynamic (`dynamic = ["version"]`, read from the package at build time; `v7`), `package` must be set and its installed `__version__` must equal this on every interpreter |
 
 Assertions: `checkout`, `version` (only when `expected_version` is set), then for each
 interpreter `install-<py>`, `import-<py>` (only when `package` is set), `tests-<py>`.
@@ -192,6 +192,17 @@ readers report: `inspect_stage`, `has_clips`, every attribute and computed visib
 at every tick for a stage, and `validate_replay`, `replay_info` and `read_replay` for a
 replay.
 
+[`scenarios/darkroom_state.py`](scenarios/darkroom_state.py) covers darkroom's per-project
+state: `.darkroom/state.json` and the takes under `.darkroom/takes/`, beside a shot list. The
+baseline shoots two projects with the `command` backend and a standard-library stand-in for a
+capture program (stills, a clip with GIF, poster and contact sheet, a still under two tags, a
+prep and the still that depends on it, and a shot recorded by `shoot --adopt`). darkroom
+promises that upgrading does not by itself make a shot stale, so each version's view of a
+project is what its own `shoot` does to it: every shot `kept` (state entry, take and outputs
+byte-identical) or `rewritten`, plus whether the recorded hashes equal that version's own and
+the outputs it expects. darkroom's capture hash includes the project's absolute path, so that
+shoot runs in place and the project is restored byte for byte from a copy afterwards.
+
 ### Game scenarios (checkout mode)
 
 Four scenarios cover games that are run from a checkout. Each one **plays** the baseline: the
@@ -255,6 +266,12 @@ gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates 
   -f scenario=scenarios/usd_recorder_recordings.py -f distribution=usd-recorder
 ```
 
+```
+gh workflow run save-compat.yml --repo Stephenson-Software/python-release-gates --ref v7 \
+  -f repository=Preponderous-Software/darkroom -f sha=<commit> -f baseline_ref=v0.7.1 \
+  -f scenario=scenarios/darkroom_state.py -f distribution=darkroom
+```
+
 Reference a tag, never a branch, so that a change here cannot alter a check already in
 progress.
 
@@ -272,6 +289,7 @@ it fails as `harness`. Each tag holds everything in the tags before it.
 | `v4` | `tak_game_saves.py`, `fishe_saves.py`, `cave_saves.py`, `ophidian_saves.py`, `menu_bot.py`; an unknown `pin_sources` fails as `harness` with a `result.json` (before, the gate exited with none) |
 | `v5` | `SAVE_MIGRATIONS`, declared by `fishe_saves.py` |
 | `v6` | `complete` in `result.json` and the summary's `DID NOT FINISH`; a package without `__version__` passes `import-<py>` (in `v5` and earlier it fails); stderr after a scenario's JSON line no longer fails the read (in `v5` and earlier it does); a view must be a JSON object (in `v5` and earlier any JSON on the last line is taken as the view); a URL pin must name the repository whole, so `owner/tak-client` no longer pins `owner/tak` (in `v5` and earlier the consumer is tested, not skipped); a baseline write or fixture that leaves only directories fails `baseline-write` or `fixture` (in `v5` and earlier it passes with `0 file(s)`); an indented `version` key, or a comment after the `[project]` header, is read by the `version` check (in `v5` and earlier it reads as none, so `version` fails); the gate jobs run on `ubuntu-24.04`, where Python 3.8 and 3.9 can be set up (in `v5` and earlier they run on `ubuntu-latest`, which no longer has them) |
+| `v7` | `darkroom_state.py`; a dynamic version (`dynamic = ["version"]` in pyproject.toml) is checked through the installed package's `__version__`, which every `import-<py>` must report as `expected_version` (in `v6` and earlier `version` fails, since pyproject.toml declares none) |
 
 ## License
 
