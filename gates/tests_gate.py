@@ -4,10 +4,13 @@ supports, installed the way a consumer installs it.
 Assertions, in order — the run stops at the first failure:
 
   checkout            the candidate commit is checked out (infrastructure if not)
-  version             the version the build file declares equals EXPECTED_VERSION (when given)
+  version             the version the build file declares equals EXPECTED_VERSION (when given);
+                      when pyproject.toml's version is dynamic (v7), PACKAGE must be set, and
+                      the import-<py> checks hold its `__version__` to EXPECTED_VERSION instead
   install-<py>        `pip install <install spec>` succeeds on interpreter <py>
   import-<py>         the package imports from the installed copy and, when it defines
-                      `__version__`, reports EXPECTED_VERSION
+                      `__version__`, reports EXPECTED_VERSION (with a dynamic version it must
+                      define it)
   tests-<py>          TEST_COMMAND exits 0 (pytest's summary line is quoted)
 
 Environment (set by the workflow from its inputs): REPOSITORY, SHA, PACKAGE, PYTHON_VERSIONS,
@@ -36,6 +39,17 @@ def declared_version(src: Path) -> str:
         return ""
     v = re.search(r'^[ \t]*version\s*=\s*["\']([^"\']+)["\']', m.group(1), re.M)
     return v.group(1) if v else ""
+
+
+def version_is_dynamic(src: Path) -> bool:
+    """pyproject.toml's `[project]` lists `version` in `dynamic` (the build reads it from the
+    package, e.g. setuptools' `version = {attr = "pkg._version.__version__"}`)."""
+    text = (src / "pyproject.toml").read_text() if (src / "pyproject.toml").exists() else ""
+    m = re.search(r"^\[project\][ \t]*(?:#[^\n]*)?$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    if not m:
+        return False
+    d = re.search(r"^[ \t]*dynamic\s*=\s*\[([^\]]*)\]", m.group(1), re.M)
+    return bool(d) and re.search(r"""["']version["']""", d.group(1)) is not None
 
 
 PROBE_TAG = "prg-import-probe "
@@ -78,8 +92,16 @@ def main() -> int:
         head = run(["git", "-C", str(src), "rev-parse", "HEAD"])[1].strip()
         result.check("checkout", head == sha, f"checked out {head}")
         declared = declared_version(src)
+        dynamic = not declared and version_is_dynamic(src)
         result.doc["version"] = declared
-        if expected:
+        result.doc["versionDynamic"] = dynamic
+        if expected and dynamic:
+            # Nothing to read in pyproject.toml: the version is the package's own __version__,
+            # which every import-<py> check below must then report exactly.
+            result.check("version", bool(package),
+                         f"pyproject.toml's version is dynamic; each import-<py> check holds {package}.__version__ to {expected}"
+                         if package else f"pyproject.toml's version is dynamic and no package was given to read it from; expected {expected}")
+        elif expected:
             result.check("version", declared == expected, f"pyproject.toml declares {declared or '(none)'}; expected {expected}")
         for py in pythons:
             interp = make_venv(work / f"venv-{py}", f"python{py}")
@@ -89,11 +111,12 @@ def main() -> int:
             if package:
                 code, out = run([str(interp), "-c", import_probe(package)], cwd=work)
                 where, ver = parse_probe(out)
-                ok = code == 0 and "site-packages" in where and (not expected or not ver or ver == expected)
+                ok = (code == 0 and "site-packages" in where
+                      and (not expected or ver == expected or (not ver and not dynamic)))
                 detail = (f"{package} {ver or '(no __version__)'} from {where}" if code == 0
                           else f"import failed: {tail(out)}")
-                if code == 0 and expected and ver and ver != expected:
-                    detail += f"; expected {expected}"
+                if code == 0 and expected and ver != expected and (ver or dynamic):
+                    detail += f"; expected {expected}" + (" (pyproject.toml's version is dynamic)" if dynamic else "")
                 result.check(f"import-{py}", ok, detail)
             # The suite runs against the INSTALLED copy where the project allows it; a
             # `pythonpath = ["src"]` pytest setting points it back at the checkout, which is
