@@ -7,10 +7,57 @@ evidence. The policy that decides what to do with that evidence lives elsewhere.
 
 These workflows publish nothing and hold no secrets. Their token is read-only.
 
+![Two terminal windows: the tests gate on tak prints five green PASS lines and exits 0; run again expecting 0.6.0 it prints PASS checkout, FAIL version and exits 1](docs/screenshots/tests-gate-pass-fail.png)
+
+*The tests gate run locally against tak 0.5.0: every assertion passes, then the same commit stops at `version` when 0.6.0 is expected. See [Screenshots](#screenshots).*
+
 The first library covered is [tak](https://github.com/Stephenson-Software/tak), the
 text-adventure kit that FishE, Tidewater and Overwinter are built on. From `v2` the
 save-compatibility gate also covers applications that are run from a checkout rather than
 installed with pip. The first is [roam](https://github.com/Preponderous-Software/roam).
+
+## Screenshots
+
+Every image here is real output, captured by running the gate scripts locally the way the
+workflows run them (see [Run a gate locally](#run-a-gate-locally)), against
+[tak](https://github.com/Stephenson-Software/tak) at `v0.5.0`
+(`2bb6938ed2a1aed644f3e96163adc489e067eb10`).
+
+**Pass and fail.** With `EXPECTED_VERSION=0.5.0` every assertion passes and the script exits 0
+(the PASS/FAIL lines are filtered out of the full log with `grep`). With
+`EXPECTED_VERSION=0.6.0` the gate stops at the first failing assertion, `version`, and exits 1;
+that run is shown whole. Both are in the image at the top of this page.
+
+**Run summary.** What [`gates/summarize.py`](gates/summarize.py) printed for those two runs'
+`result.json`, the Markdown each workflow appends to `$GITHUB_STEP_SUMMARY`, rendered locally.
+
+![Two run-summary tables: Tests gate PASSED with five ticked assertions, and Tests gate FAILED with checkout ticked and version crossed](docs/screenshots/run-summary.png)
+
+**Save compatibility.** The save-compatibility gate with `scenarios/tak_slots.py`: tak `v0.2.0`
+writes the saves, and tak `v0.5.0` reads them twice, appends a save and reads again, with every
+baseline file left byte-identical. The PASS/FAIL lines are cut at 112 characters, since
+`baseline-read` quotes the whole save view.
+
+![A terminal: the save-compatibility gate on tak exits 0 and its eleven assertions, from baseline-install to read-3, all print PASS](docs/screenshots/save-compat-tak-pass.png)
+
+### Run a gate locally
+
+Each gate is a plain script driven by environment variables. The tests gate expects the
+candidate checked out at `$WORK/src`, as the workflow does:
+
+```
+git clone https://github.com/Stephenson-Software/tak /tmp/prg-work/src
+git -C /tmp/prg-work/src checkout 2bb6938ed2a1aed644f3e96163adc489e067eb10
+REPOSITORY=Stephenson-Software/tak SHA=2bb6938ed2a1aed644f3e96163adc489e067eb10 \
+    PACKAGE=tak EXPECTED_VERSION=0.5.0 PYTHON_VERSIONS=3.12 WORK=/tmp/prg-work \
+    python3.12 gates/tests_gate.py
+python3.12 gates/summarize.py /tmp/prg-work/result.json "Tests gate"
+```
+
+**Regenerating screenshots.** The captured output is kept in
+[`docs/screenshots/src/`](docs/screenshots/src); `python3 docs/screenshots/render.py` turns it
+into pages and `darkroom shoot docs/screenshots/media.json` (with
+[darkroom](https://github.com/Preponderous-Software/darkroom)) captures them.
 
 ## Gates
 

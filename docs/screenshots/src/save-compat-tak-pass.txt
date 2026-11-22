@@ -1,0 +1,16 @@
+$ REPOSITORY=Stephenson-Software/tak SHA=2bb6938ed2a1aed644f3e96163adc489e067eb10 \
+    BASELINE_REF=v0.2.0 SCENARIO=scenarios/tak_slots.py DISTRIBUTION=tak WORK=/tmp/prg-sc \
+    python3.12 gates/save_compat.py > save-compat.log 2>&1; echo "exit $?"
+exit 0
+$ grep -E '^(PASS|FAIL) ' save-compat.log | cut -c1-112
+PASS baseline-install: tak v0.2.0 installed at 5aa490b46102a9a5ceb63c077058ce446bfc75a5
+PASS candidate-install: tak installed at 2bb6938ed2a1aed644f3e96163adc489e067eb10
+PASS baseline-write: 13 file(s) written by v0.2.0
+PASS baseline-read: reference view: {"next_slot": 3, "saves": [{"metadata": {"day": 3, "last_modified": "2026-11
+PASS read-1: candidate view equals the baseline view
+PASS files-kept-1: 13 file(s) byte-identical
+PASS read-2: candidate view equals the baseline view
+PASS files-kept-2: 13 file(s) byte-identical
+PASS append: candidate added a save beside the baseline's
+PASS files-kept-3: every baseline file byte-identical; added 2 path(s)
+PASS read-3: 6 save(s) listed: every baseline save unchanged + 1 added
