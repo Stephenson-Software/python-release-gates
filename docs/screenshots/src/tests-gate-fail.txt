@@ -1,0 +1,9 @@
+$ REPOSITORY=Stephenson-Software/tak SHA=2bb6938ed2a1aed644f3e96163adc489e067eb10 \
+    PACKAGE=tak EXPECTED_VERSION=0.6.0 PYTHON_VERSIONS=3.12 WORK=/tmp/prg-work \
+    python3.12 gates/tests_gate.py 2>&1
+$ git -C /tmp/prg-work/src rev-parse HEAD
+2bb6938ed2a1aed644f3e96163adc489e067eb10
+PASS checkout: checked out 2bb6938ed2a1aed644f3e96163adc489e067eb10
+FAIL version: pyproject.toml declares 0.5.0; expected 0.6.0
+$ echo "exit $?"
+exit 1

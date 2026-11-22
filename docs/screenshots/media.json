@@ -1,0 +1,52 @@
+{
+  "out": ".",
+  "devices": {
+    "doc": {
+      "width": 1240,
+      "height": 900,
+      "dpr": 1
+    }
+  },
+  "defaults": {
+    "device": "doc",
+    "format": "png",
+    "crop": {
+      "of": ".shot",
+      "pad": 0
+    }
+  },
+  "shots": [
+    {
+      "name": "tests-gate-pass-fail",
+      "url": "file://{manifest_dir}/build/terminal-pass-fail.html",
+      "inputs": [
+        "src/tests-gate-pass.txt",
+        "src/tests-gate-fail.txt",
+        "render.py"
+      ],
+      "caption": "The tests gate run on tak 0.5.0: every assertion passes, then the same commit stops at `version` when 0.6.0 is expected.",
+      "alt": "Two terminal windows: the tests gate on tak prints five green PASS lines and exits 0; run again expecting 0.6.0 it prints PASS checkout, FAIL version and exits 1"
+    },
+    {
+      "name": "run-summary",
+      "url": "file://{manifest_dir}/build/run-summary.html",
+      "inputs": [
+        "src/tests-gate-pass.summary.md",
+        "src/tests-gate-fail.summary.md",
+        "render.py"
+      ],
+      "caption": "What gates/summarize.py writes to the run summary for those two runs.",
+      "alt": "Two run-summary tables: Tests gate PASSED with five ticked assertions, and Tests gate FAILED with checkout ticked and version crossed"
+    },
+    {
+      "name": "save-compat-tak-pass",
+      "url": "file://{manifest_dir}/build/save-compat-tak-pass.html",
+      "inputs": [
+        "src/save-compat-tak-pass.txt",
+        "render.py"
+      ],
+      "caption": "The save-compatibility gate: saves written by tak v0.2.0 are read, kept byte-identical and appended to by tak 0.5.0.",
+      "alt": "A terminal: the save-compatibility gate on tak exits 0 and its eleven assertions, from baseline-install to read-3, all print PASS"
+    }
+  ]
+}

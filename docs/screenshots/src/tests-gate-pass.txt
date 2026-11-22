@@ -1,0 +1,10 @@
+$ REPOSITORY=Stephenson-Software/tak SHA=2bb6938ed2a1aed644f3e96163adc489e067eb10 \
+    PACKAGE=tak EXPECTED_VERSION=0.5.0 PYTHON_VERSIONS=3.12 WORK=/tmp/prg-work \
+    python3.12 gates/tests_gate.py 2>&1 | grep -E '^(PASS|FAIL) '
+PASS checkout: checked out 2bb6938ed2a1aed644f3e96163adc489e067eb10
+PASS version: pyproject.toml declares 0.5.0; expected 0.5.0
+PASS install-3.12: pip install .[dev]
+PASS import-3.12: tak 0.5.0 from /tmp/prg-work/venv-3.12/lib/python3.12/site-packages/tak
+PASS tests-3.12: 383 passed in 111.21s (0:01:51)
+$ echo "exit ${PIPESTATUS[0]}"
+exit 0
